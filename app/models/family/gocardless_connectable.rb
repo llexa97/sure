@@ -6,7 +6,7 @@ module Family::GocardlessConnectable
   end
 
   def can_connect_gocardless?
-    ENV["GOCARDLESS_ENABLED"].to_s.strip.downcase.in?(%w[1 true yes on]) && Provider::GocardlessAdapter.configured?
+    Provider::GocardlessAdapter.configured?
   end
 
   def create_gocardless_item!(institution:, country_code:, requisition:, reference: nil)

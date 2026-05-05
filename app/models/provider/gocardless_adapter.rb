@@ -15,13 +15,13 @@ class Provider::GocardlessAdapter < Provider::Base
 
     field :secret_id,
           label: "Secret ID",
-          required: false,
+          required: true,
           env_key: "GOCARDLESS_SECRET_ID",
           description: "GoCardless Bank Account Data Secret ID"
 
     field :secret_key,
           label: "Secret Key",
-          required: false,
+          required: true,
           secret: true,
           env_key: "GOCARDLESS_SECRET_KEY",
           description: "GoCardless Bank Account Data Secret Key"
