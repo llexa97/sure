@@ -84,7 +84,8 @@ class Account::ProviderImportAdapter
           ActiveModel::Type::Boolean.new.cast(pending_extra.dig("simplefin", "pending")) ||
           ActiveModel::Type::Boolean.new.cast(pending_extra.dig("plaid", "pending")) ||
           ActiveModel::Type::Boolean.new.cast(pending_extra.dig("lunchflow", "pending")) ||
-          ActiveModel::Type::Boolean.new.cast(pending_extra.dig("enable_banking", "pending"))
+          ActiveModel::Type::Boolean.new.cast(pending_extra.dig("enable_banking", "pending")) ||
+          ActiveModel::Type::Boolean.new.cast(pending_extra.dig("gocardless", "pending"))
       end
 
       if entry.new_record? && !incoming_pending

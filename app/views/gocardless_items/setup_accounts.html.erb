@@ -1,0 +1,17 @@
+<div class="space-y-4">
+  <h1 class="text-primary text-xl font-medium">Select GoCardless accounts</h1>
+
+  <%= form_with url: complete_account_setup_gocardless_item_path(@gocardless_item), method: :post, local: true, class: "space-y-3" do %>
+    <% @gocardless_accounts.each do |account| %>
+      <label class="flex items-center gap-3 p-3 bg-container rounded-lg">
+        <%= check_box_tag "account_ids[]", account.id, true %>
+        <span>
+          <span class="block text-primary"><%= account.name %></span>
+          <span class="block text-secondary text-sm"><%= account.currency %> · <%= account.current_balance %></span>
+        </span>
+      </label>
+    <% end %>
+
+    <%= submit_tag "Link selected accounts", class: "btn btn--primary" %>
+  <% end %>
+</div>
