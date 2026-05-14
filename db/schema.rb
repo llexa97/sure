@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_05_03_180000) do
+ActiveRecord::Schema[7.2].define(version: 2026_05_05_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
@@ -631,6 +631,48 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_03_180000) do
     t.index ["family_id", "merchant_id"], name: "idx_on_family_id_merchant_id_23e883e08f", unique: true
     t.index ["family_id"], name: "index_family_merchant_associations_on_family_id"
     t.index ["merchant_id"], name: "index_family_merchant_associations_on_merchant_id"
+  end
+
+  create_table "gocardless_accounts", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "gocardless_item_id", null: false
+    t.string "account_id", null: false
+    t.string "iban"
+    t.string "name", null: false
+    t.string "currency"
+    t.string "account_type"
+    t.decimal "current_balance", precision: 19, scale: 4
+    t.decimal "available_balance", precision: 19, scale: 4
+    t.jsonb "institution_metadata", default: {}
+    t.jsonb "raw_payload", default: {}
+    t.jsonb "raw_transactions_payload", default: {}
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["gocardless_item_id", "account_id"], name: "index_gocardless_accounts_on_gocardless_item_id_and_account_id", unique: true
+    t.index ["gocardless_item_id"], name: "index_gocardless_accounts_on_gocardless_item_id"
+  end
+
+  create_table "gocardless_items", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.string "name", null: false
+    t.string "country_code"
+    t.string "institution_id", null: false
+    t.string "institution_name"
+    t.string "institution_logo"
+    t.string "status", default: "good", null: false
+    t.string "agreement_id"
+    t.string "requisition_id", null: false
+    t.string "reference"
+    t.datetime "access_expires_at"
+    t.datetime "last_synced_at"
+    t.boolean "scheduled_for_deletion", default: false, null: false
+    t.jsonb "raw_payload", default: {}
+    t.jsonb "raw_institution_payload", default: {}
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["family_id"], name: "index_gocardless_items_on_family_id"
+    t.index ["reference"], name: "index_gocardless_items_on_reference"
+    t.index ["requisition_id"], name: "index_gocardless_items_on_requisition_id", unique: true
+    t.index ["status"], name: "index_gocardless_items_on_status"
   end
 
   create_table "holdings", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -1689,6 +1731,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_03_180000) do
   add_foreign_key "family_exports", "families"
   add_foreign_key "family_merchant_associations", "families"
   add_foreign_key "family_merchant_associations", "merchants"
+  add_foreign_key "gocardless_accounts", "gocardless_items"
+  add_foreign_key "gocardless_items", "families"
   add_foreign_key "holdings", "account_providers"
   add_foreign_key "holdings", "accounts", on_delete: :cascade
   add_foreign_key "holdings", "securities"
