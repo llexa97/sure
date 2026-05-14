@@ -1,6 +1,14 @@
 name: Publish Docker image (dev)
 
 on:
+  push:
+    branches:
+      - 'feature/**'
+    paths-ignore:
+      - 'charts/**'
+      - 'mobile/**'
+      - 'docs/**'
+      - '**.md'
   workflow_dispatch:
     inputs:
       ref:
@@ -27,7 +35,7 @@ jobs:
       - name: Check out the repo
         uses: actions/checkout@v4.2.0
         with:
-          ref: ${{ github.event.inputs.ref }}
+          ref: ${{ github.event.inputs.ref || github.ref }}
           fetch-depth: 0
 
       - name: Set up Docker Buildx
