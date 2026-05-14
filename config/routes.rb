@@ -126,6 +126,20 @@ Rails.application.routes.draw do
       post :complete_account_setup
     end
   end
+
+  resources :powens_items, only: [ :new, :create, :destroy ] do
+    collection do
+      get :callback
+      get :select_existing_account
+      post :link_existing_account
+    end
+    member do
+      post :sync
+      get :reconnect
+      get :setup_accounts
+      post :complete_account_setup
+    end
+  end
   use_doorkeeper
   # MFA routes
   resource :mfa, controller: "mfa", only: [ :new, :create ] do

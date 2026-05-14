@@ -1,0 +1,30 @@
+<%= turbo_frame_tag "modal" do %>
+  <%= render DS::Dialog.new do |dialog| %>
+    <% dialog.with_header(title: "Connect Powens") %>
+    <% dialog.with_body do %>
+      <div class="space-y-4">
+        <% if @powens_provider.present? %>
+          <p class="text-secondary text-sm">
+            You will be redirected to Powens Webview to select a bank and authorize account access.
+          </p>
+
+          <%= form_with url: powens_items_path, method: :post, local: true, class: "space-y-3", data: { turbo: false } do %>
+            <%= submit_tag "Connect bank", class: "btn btn--primary" %>
+          <% end %>
+        <% else %>
+          <div class="p-4 flex flex-col gap-3 items-center justify-center">
+            <p class="text-primary font-medium text-sm">Powens is not configured</p>
+            <p class="text-secondary text-sm">Configure your sandbox domain, Client ID, and Client secret first.</p>
+            <%= render DS::Link.new(
+              text: "Open provider settings",
+              icon: "settings",
+              variant: "primary",
+              href: settings_providers_path,
+              frame: :_top
+            ) %>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+  <% end %>
+<% end %>

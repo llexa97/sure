@@ -976,6 +976,33 @@ class Account::ProviderImportAdapterTest < ActiveSupport::TestCase
     end
   end
 
+  test "reconciles Powens pending transaction when posted version arrives" do
+    pending_entry = @adapter.import_transaction(
+      external_id: "powens_pending_window_test",
+      amount: 75.00,
+      currency: "USD",
+      date: Date.today - 2.days,
+      name: "Online Order",
+      source: "powens",
+      extra: { "powens" => { "pending" => true } }
+    )
+
+    assert_no_difference "@account.entries.count" do
+      posted_entry = @adapter.import_transaction(
+        external_id: "powens_posted_window_test",
+        amount: 75.00,
+        currency: "USD",
+        date: Date.today,
+        name: "Online Order - Posted",
+        source: "powens",
+        extra: { "powens" => { "pending" => false } }
+      )
+
+      assert_equal pending_entry.id, posted_entry.id
+      assert_not posted_entry.transaction.pending?
+    end
+  end
+
   test "does not reconcile pending from different source" do
     # Import pending from SimpleFIN
     pending_entry = @adapter.import_transaction(

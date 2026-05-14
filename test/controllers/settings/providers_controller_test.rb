@@ -3,6 +3,8 @@ require "test_helper"
 class Settings::ProvidersControllerTest < ActionDispatch::IntegrationTest
   setup do
     sign_in users(:family_admin)
+    ensure_tailwind_build
+    Redis.any_instance.stubs(:ping).returns("PONG")
 
     # Ensure provider adapters are loaded for all tests
     Provider::Factory.ensure_adapters_loaded
@@ -51,6 +53,27 @@ class Settings::ProvidersControllerTest < ActionDispatch::IntegrationTest
 
       assert_redirected_to settings_providers_url
       assert_equal "test_client_id", Setting["plaid_client_id"]
+    end
+  end
+
+  test "updates Powens credentials from provider settings UI" do
+    with_self_hosting do
+      Setting["powens_domain"] = nil
+      Setting["powens_client_id"] = nil
+      Setting["powens_client_secret"] = nil
+
+      patch settings_providers_url, params: {
+        setting: {
+          powens_domain: "demo-sandbox.biapi.pro",
+          powens_client_id: "powens-client",
+          powens_client_secret: "powens-secret"
+        }
+      }
+
+      assert_redirected_to settings_providers_url
+      assert_equal "demo-sandbox.biapi.pro", Setting["powens_domain"]
+      assert_equal "powens-client", Setting["powens_client_id"]
+      assert_equal "powens-secret", Setting["powens_client_secret"]
     end
   end
 

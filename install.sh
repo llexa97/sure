@@ -70,6 +70,10 @@ SECRET_KEY_BASE=$SECRET_KEY_BASE
 GOCARDLESS_SECRET_ID=${GOCARDLESS_SECRET_ID:-}
 GOCARDLESS_SECRET_KEY=${GOCARDLESS_SECRET_KEY:-}
 GOCARDLESS_INCLUDE_PENDING=${GOCARDLESS_INCLUDE_PENDING:-false}
+POWENS_DOMAIN=${POWENS_DOMAIN:-}
+POWENS_CLIENT_ID=${POWENS_CLIENT_ID:-}
+POWENS_CLIENT_SECRET=${POWENS_CLIENT_SECRET:-}
+POWENS_INCLUDE_PENDING=${POWENS_INCLUDE_PENDING:-false}
 ENV
 chown "$APP_USER:$APP_USER" "$APP_DIR/.env.production"
 chmod 600 "$APP_DIR/.env.production"
@@ -124,4 +128,4 @@ systemctl daemon-reload
 systemctl enable --now redis-server sure.service sure-sidekiq.service
 systemctl --no-pager --full status sure.service | sed -n '1,16p'
 echo "Sure installed. URL: http://$(hostname -I | awk '{print $1}'):$PORT"
-echo "Configure GoCardless secrets in $APP_DIR/.env.production or Settings > Providers, then restart: systemctl restart sure sure-sidekiq"
+echo "Configure GoCardless/Powens secrets in $APP_DIR/.env.production or Settings > Providers, then restart: systemctl restart sure sure-sidekiq"

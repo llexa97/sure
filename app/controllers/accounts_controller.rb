@@ -22,6 +22,7 @@ class AccountsController < ApplicationController
     @indexa_capital_items = visible_provider_items(family.indexa_capital_items.ordered.includes(:syncs, :indexa_capital_accounts))
     @sophtron_items = visible_provider_items(family.sophtron_items.ordered.includes(:syncs, :sophtron_accounts))
     @gocardless_items = visible_provider_items(family.gocardless_items.active.ordered.includes(:syncs, :gocardless_accounts, :accounts))
+    @powens_items = visible_provider_items(family.powens_items.active.ordered.includes(:syncs, :powens_accounts, :accounts))
 
     # Build sync stats maps for all providers
     build_sync_stats_maps

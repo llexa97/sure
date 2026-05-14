@@ -32,6 +32,13 @@ class Settings::BankSyncController < ApplicationController
         rel: "noopener noreferrer"
       },
       {
+        name: "Powens (sandbox)",
+        description: "European bank connections through Powens Webview and sandbox domains.",
+        path: "https://docs.powens.com/documentation/integration-guides/quick-start",
+        target: "_blank",
+        rel: "noopener noreferrer"
+      },
+      {
         name: "Sophtron (alpha)",
         description: "US & Canada bank, credit card, investment, loan, insurance, utility, and other connections.",
         path: "https://www.sophtron.com/",

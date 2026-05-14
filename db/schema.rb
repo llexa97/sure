@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_05_05_180000) do
+ActiveRecord::Schema[7.2].define(version: 2026_05_14_190000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
@@ -1168,6 +1168,54 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_05_180000) do
     t.index ["plaid_id"], name: "index_plaid_items_on_plaid_id", unique: true
   end
 
+  create_table "powens_accounts", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "powens_item_id", null: false
+    t.string "account_id", null: false
+    t.string "iban"
+    t.string "number"
+    t.string "name", null: false
+    t.string "currency"
+    t.string "account_type"
+    t.decimal "current_balance", precision: 19, scale: 4
+    t.decimal "available_balance", precision: 19, scale: 4
+    t.datetime "disabled_at"
+    t.datetime "deleted_at"
+    t.jsonb "institution_metadata", default: {}
+    t.jsonb "raw_payload", default: {}
+    t.jsonb "raw_transactions_payload", default: {}
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["powens_item_id", "account_id"], name: "index_powens_accounts_on_powens_item_id_and_account_id", unique: true
+    t.index ["powens_item_id"], name: "index_powens_accounts_on_powens_item_id"
+  end
+
+  create_table "powens_items", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.string "name", null: false
+    t.string "domain"
+    t.string "user_id"
+    t.text "access_token", null: false
+    t.string "connection_id"
+    t.string "connector_id"
+    t.string "connector_uuid"
+    t.string "connector_name"
+    t.string "connector_color"
+    t.string "status", default: "good", null: false
+    t.string "connection_state"
+    t.string "reference", null: false
+    t.datetime "access_expires_at"
+    t.datetime "last_synced_at"
+    t.boolean "scheduled_for_deletion", default: false, null: false
+    t.jsonb "raw_payload", default: {}
+    t.jsonb "raw_connection_payload", default: {}
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["connection_id"], name: "index_powens_items_on_connection_id", unique: true
+    t.index ["family_id"], name: "index_powens_items_on_family_id"
+    t.index ["reference"], name: "index_powens_items_on_reference", unique: true
+    t.index ["status"], name: "index_powens_items_on_status"
+  end
+
   create_table "properties", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
@@ -1759,6 +1807,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_05_180000) do
   add_foreign_key "oidc_identities", "users"
   add_foreign_key "plaid_accounts", "plaid_items"
   add_foreign_key "plaid_items", "families"
+  add_foreign_key "powens_accounts", "powens_items"
+  add_foreign_key "powens_items", "families"
   add_foreign_key "recurring_transactions", "accounts"
   add_foreign_key "recurring_transactions", "families"
   add_foreign_key "recurring_transactions", "merchants"

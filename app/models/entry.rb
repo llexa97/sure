@@ -48,15 +48,15 @@ class Entry < ApplicationRecord
   # Pending transaction scopes - check Transaction.extra for provider pending flags
   # Works with any provider that stores pending status in extra["provider_name"]["pending"]
   scope :pending, -> {
+    conditions = Transaction::PENDING_PROVIDERS.map { |provider| "(transactions.extra -> '#{provider}' ->> 'pending')::boolean = true" }
+
     joins("INNER JOIN transactions ON transactions.id = entries.entryable_id AND entries.entryable_type = 'Transaction'")
-      .where(<<~SQL.squish)
-        (transactions.extra -> 'simplefin' ->> 'pending')::boolean = true
-        OR (transactions.extra -> 'plaid' ->> 'pending')::boolean = true
-        OR (transactions.extra -> 'lunchflow' ->> 'pending')::boolean = true
-      SQL
+      .where(conditions.join(" OR "))
   }
 
   scope :excluding_pending, -> {
+    conditions = Transaction::PENDING_PROVIDERS.map { |provider| "(t.extra -> '#{provider}' ->> 'pending')::boolean = true" }
+
     # For non-Transaction entries (Trade, Valuation), always include
     # For Transaction entries, exclude if pending flag is true
     where(<<~SQL.squish)
@@ -65,9 +65,7 @@ class Entry < ApplicationRecord
         SELECT 1 FROM transactions t
         WHERE t.id = entries.entryable_id
         AND (
-          (t.extra -> 'simplefin' ->> 'pending')::boolean = true
-          OR (t.extra -> 'plaid' ->> 'pending')::boolean = true
-          OR (t.extra -> 'lunchflow' ->> 'pending')::boolean = true
+          #{conditions.join(" OR ")}
         )
       )
     SQL
@@ -158,17 +156,14 @@ class Entry < ApplicationRecord
 
       # PRIORITY 1: Look for posted transaction with EXACT amount match
       # CRITICAL: Only search forward in time - posted date must be >= pending date
+      posted_conditions = Transaction::PENDING_PROVIDERS.map { |provider| "(transactions.extra -> '#{provider}' ->> 'pending')::boolean IS NOT TRUE" }
       exact_candidates = acct.entries
         .joins("INNER JOIN transactions ON transactions.id = entries.entryable_id AND entries.entryable_type = 'Transaction'")
         .where.not(id: pending_entry.id)
         .where(currency: pending_entry.currency)
         .where(amount: pending_entry.amount)
         .where(date: pending_entry.date..(pending_entry.date + date_window.days)) # Posted must be ON or AFTER pending date
-        .where(<<~SQL.squish)
-          (transactions.extra -> 'simplefin' ->> 'pending')::boolean IS NOT TRUE
-          AND (transactions.extra -> 'plaid' ->> 'pending')::boolean IS NOT TRUE
-          AND (transactions.extra -> 'lunchflow' ->> 'pending')::boolean IS NOT TRUE
-        SQL
+        .where(posted_conditions.join(" AND "))
         .limit(2) # Only need to know if 0, 1, or 2+ candidates
         .to_a # Load limited records to avoid COUNT(*) on .size
 
@@ -211,11 +206,7 @@ class Entry < ApplicationRecord
         .where(currency: pending_entry.currency)
         .where(date: pending_entry.date..(pending_entry.date + fuzzy_date_window.days)) # Posted ON or AFTER pending
         .where("ABS(entries.amount) BETWEEN ? AND ?", min_amount, max_amount)
-        .where(<<~SQL.squish)
-          (transactions.extra -> 'simplefin' ->> 'pending')::boolean IS NOT TRUE
-          AND (transactions.extra -> 'plaid' ->> 'pending')::boolean IS NOT TRUE
-          AND (transactions.extra -> 'lunchflow' ->> 'pending')::boolean IS NOT TRUE
-        SQL
+        .where(posted_conditions.join(" AND "))
 
       # Match by name similarity (first 3 words)
       name_words = pending_entry.name.downcase.gsub(/[^a-z0-9\s]/, "").split.first(3).join(" ")

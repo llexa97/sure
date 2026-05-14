@@ -37,6 +37,12 @@ class TransactionTest < ActiveSupport::TestCase
     assert_not transaction.pending?
   end
 
+  test "pending? returns true for powens pending transactions" do
+    transaction = Transaction.new(extra: { "powens" => { "pending" => true } })
+
+    assert transaction.pending?
+  end
+
   test "investment_contribution is a valid kind" do
     transaction = Transaction.new(kind: "investment_contribution")
 

@@ -1,0 +1,90 @@
+<%# locals: (powens_item:) %>
+
+<%= tag.div id: dom_id(powens_item) do %>
+  <details open class="group bg-container p-4 shadow-border-xs rounded-xl">
+    <summary class="flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2">
+        <%= icon "chevron-right", class: "group-open:transform group-open:rotate-90" %>
+
+        <div class="flex items-center justify-center h-8 w-8 bg-cyan-600/10 rounded-full">
+          <%= tag.p (powens_item.connector_name || powens_item.name).first.upcase, class: "text-cyan-700 text-xs font-medium" %>
+        </div>
+
+        <div class="pl-1 text-sm">
+          <div class="flex items-center gap-2">
+            <%= tag.p (powens_item.connector_name || powens_item.name), class: "font-medium text-primary" %>
+            <% if powens_item.scheduled_for_deletion? %>
+              <p class="text-destructive text-sm animate-pulse">Deletion pending...</p>
+            <% elsif powens_item.requires_update? %>
+              <p class="text-warning text-sm">Reconnect required</p>
+            <% end %>
+          </div>
+          <% if powens_item.syncing? %>
+            <div class="text-secondary flex items-center gap-1">
+              <%= icon "loader", size: "sm", class: "animate-spin" %>
+              <span>Syncing...</span>
+            </div>
+          <% else %>
+            <p class="text-secondary">
+              <% if powens_item.last_synced_at %>
+                Last sync: <%= time_ago_in_words(powens_item.last_synced_at) %>
+              <% else %>
+                Never synced
+              <% end %>
+            </p>
+          <% end %>
+        </div>
+      </div>
+
+      <% if Current.user&.admin? %>
+        <div class="flex items-center gap-2">
+          <% if powens_item.requires_update? && powens_item.connection_id.present? %>
+            <%= icon(
+              "link",
+              as_button: true,
+              href: reconnect_powens_item_path(powens_item),
+              frame: :_top
+            ) %>
+          <% end %>
+
+          <%= icon(
+            "refresh-cw",
+            as_button: true,
+            href: sync_powens_item_path(powens_item)
+          ) %>
+
+          <%= render DS::Menu.new do |menu| %>
+            <% menu.with_item(
+              variant: "button",
+              text: "Delete",
+              icon: "trash-2",
+              href: powens_item_path(powens_item),
+              method: :delete,
+              confirm: CustomConfirm.for_resource_deletion((powens_item.connector_name || powens_item.name), high_severity: true)
+            ) %>
+          <% end %>
+        </div>
+      <% end %>
+    </summary>
+
+    <% unless powens_item.scheduled_for_deletion? %>
+      <div class="space-y-4 mt-4">
+        <% if powens_item.accounts.any? %>
+          <%= render "accounts/index/account_groups", accounts: powens_item.accounts %>
+        <% else %>
+          <div class="p-4 flex flex-col gap-3 items-center justify-center">
+            <p class="text-primary font-medium text-sm">No linked accounts</p>
+            <p class="text-secondary text-sm">Finish setup to import your Powens accounts.</p>
+            <%= render DS::Link.new(
+              text: "Configure accounts",
+              icon: "settings",
+              variant: "primary",
+              href: setup_accounts_powens_item_path(powens_item),
+              frame: :modal
+            ) %>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+  </details>
+<% end %>

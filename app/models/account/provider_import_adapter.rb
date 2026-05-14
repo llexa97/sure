@@ -80,12 +80,9 @@ class Account::ProviderImportAdapter
       incoming_pending = false
       if extra.is_a?(Hash)
         pending_extra = extra.with_indifferent_access
-        incoming_pending =
-          ActiveModel::Type::Boolean.new.cast(pending_extra.dig("simplefin", "pending")) ||
-          ActiveModel::Type::Boolean.new.cast(pending_extra.dig("plaid", "pending")) ||
-          ActiveModel::Type::Boolean.new.cast(pending_extra.dig("lunchflow", "pending")) ||
-          ActiveModel::Type::Boolean.new.cast(pending_extra.dig("enable_banking", "pending")) ||
-          ActiveModel::Type::Boolean.new.cast(pending_extra.dig("gocardless", "pending"))
+        incoming_pending = Transaction::PENDING_PROVIDERS.any? do |provider|
+          ActiveModel::Type::Boolean.new.cast(pending_extra.dig(provider, "pending"))
+        end
       end
 
       if entry.new_record? && !incoming_pending
@@ -693,12 +690,7 @@ class Account::ProviderImportAdapter
       .where(amount: amount)
       .where(currency: currency)
       .where(date: (date - date_window.days)..date) # Pending must be ON or BEFORE posted date
-      .where(<<~SQL.squish)
-        (transactions.extra -> 'simplefin' ->> 'pending')::boolean = true
-        OR (transactions.extra -> 'plaid' ->> 'pending')::boolean = true
-        OR (transactions.extra -> 'lunchflow' ->> 'pending')::boolean = true
-        OR (transactions.extra -> 'enable_banking' ->> 'pending')::boolean = true
-      SQL
+      .where(pending_metadata_sql)
       .order(date: :desc) # Prefer most recent pending transaction
 
     candidates.first
@@ -740,12 +732,7 @@ class Account::ProviderImportAdapter
       .where(currency: currency)
       .where(date: (date - date_window.days)..date) # Pending ON or BEFORE posted
       .where("ABS(entries.amount) BETWEEN ? AND ?", min_pending_abs, max_pending_abs)
-      .where(<<~SQL.squish)
-        (transactions.extra -> 'simplefin' ->> 'pending')::boolean = true
-        OR (transactions.extra -> 'plaid' ->> 'pending')::boolean = true
-        OR (transactions.extra -> 'lunchflow' ->> 'pending')::boolean = true
-        OR (transactions.extra -> 'enable_banking' ->> 'pending')::boolean = true
-      SQL
+      .where(pending_metadata_sql)
 
     # If merchant_id is provided, prioritize matching by merchant
     if merchant_id.present?
@@ -810,12 +797,7 @@ class Account::ProviderImportAdapter
       .where(currency: currency)
       .where(date: (date - date_window.days)..date)
       .where("ABS(entries.amount) BETWEEN ? AND ?", min_pending_abs, max_pending_abs)
-      .where(<<~SQL.squish)
-        (transactions.extra -> 'simplefin' ->> 'pending')::boolean = true
-        OR (transactions.extra -> 'plaid' ->> 'pending')::boolean = true
-        OR (transactions.extra -> 'lunchflow' ->> 'pending')::boolean = true
-        OR (transactions.extra -> 'enable_banking' ->> 'pending')::boolean = true
-      SQL
+      .where(pending_metadata_sql)
 
     # For low confidence, require BOTH merchant AND name match (stronger signal needed)
     if merchant_id.present? && name.present?
@@ -924,5 +906,9 @@ class Account::ProviderImportAdapter
       external_id: entry.external_id,
       account_name: entry.account.name
     }
+  end
+
+  def pending_metadata_sql(table_alias = "transactions")
+    Transaction::PENDING_PROVIDERS.map { |provider| "(#{table_alias}.extra -> '#{provider}' ->> 'pending')::boolean = true" }.join(" OR ")
   end
 end
