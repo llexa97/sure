@@ -12,7 +12,7 @@
         <% end %>
 
         <% if @institutions.any? %>
-          <%= form_with url: gocardless_items_path, method: :post, local: true, class: "space-y-3" do |form| %>
+          <%= form_with url: gocardless_items_path, method: :post, local: true, class: "space-y-3", data: { turbo: false } do |form| %>
             <%= hidden_field_tag :country, @country %>
             <div>
               <%= label_tag :institution_id, "Bank", class: "text-sm text-secondary" %>
