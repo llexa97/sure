@@ -40,7 +40,9 @@ class PowensAccount::Processor
 
     def process_investments
       resolver = PowensAccount::Investments::SecurityResolver.new
+      matcher = PowensAccount::Investments::SecurityMatcher.new(powens_account, security_resolver: resolver)
       PowensAccount::Investments::HoldingsProcessor.new(powens_account, security_resolver: resolver).process
+      PowensAccount::Investments::TransactionsProcessor.new(powens_account, security_matcher: matcher).process
     end
 
     def process_transactions

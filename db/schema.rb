@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_05_15_110000) do
+ActiveRecord::Schema[7.2].define(version: 2026_05_15_150000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
@@ -1185,6 +1185,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_15_110000) do
     t.jsonb "raw_transactions_payload", default: {}
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.jsonb "raw_holdings_payload", default: {}
     t.index ["powens_item_id", "account_id"], name: "index_powens_accounts_on_powens_item_id_and_account_id", unique: true
     t.index ["powens_item_id"], name: "index_powens_accounts_on_powens_item_id"
   end

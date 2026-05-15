@@ -1,5 +1,9 @@
 class PowensAccount::Normalizer
   class << self
+    def market_order?(raw_transaction)
+      raw_transaction.with_indifferent_access[:type].to_s.downcase == "market_order"
+    end
+
     def account_name(account)
       account = account.with_indifferent_access
       currency = currency_code(account[:currency])
@@ -8,6 +12,8 @@ class PowensAccount::Normalizer
 
     def normalize_transaction(raw_transaction, account_currency:)
       tx = raw_transaction.with_indifferent_access
+      return nil if market_order?(tx)
+
       date = tx[:application_date].presence || tx[:date].presence || tx[:rdate].presence || tx[:vdate].presence
       amount = tx[:value].presence || tx[:gross_value].presence
       return nil if date.blank? || amount.blank?
@@ -107,20 +113,20 @@ class PowensAccount::Normalizer
 
     private
 
-    def parse_decimal(value)
-      return nil if value.nil? || value.to_s.strip.empty?
+      def parse_decimal(value)
+        return nil if value.nil? || value.to_s.strip.empty?
 
-      BigDecimal(value.to_s)
-    rescue ArgumentError, TypeError
-      nil
-    end
+        BigDecimal(value.to_s)
+      rescue ArgumentError, TypeError
+        nil
+      end
 
-    def parse_date(value)
-      return nil if value.blank?
+      def parse_date(value)
+        return nil if value.blank?
 
-      Date.parse(value.to_s)
-    rescue ArgumentError, TypeError
-      nil
-    end
+        Date.parse(value.to_s)
+      rescue ArgumentError, TypeError
+        nil
+      end
   end
 end

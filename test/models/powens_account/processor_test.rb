@@ -73,4 +73,73 @@ class PowensAccount::ProcessorTest < ActiveSupport::TestCase
     assert_equal BigDecimal("13960.44"), loan_account.reload.balance
     assert_equal BigDecimal("13960.44"), loan_account.cash_balance
   end
+
+  test "imports investment market orders as trades and keeps other transactions as cash entries" do
+    investment_account = accounts(:investment)
+    powens_investment = PowensAccount.create!(
+      powens_item: @powens_item,
+      account_id: "13",
+      name: "Trade Republic PEA",
+      currency: "EUR",
+      account_type: "pea",
+      current_balance: BigDecimal("231.95"),
+      raw_holdings_payload: {
+        investments: [
+          {
+            id: "holding-1",
+            id_account: "13",
+            code: "FR0013412285",
+            code_type: "ISIN",
+            label: "S&P 500 Swap Pea Eur (Acc)",
+            quantity: "38",
+            unitprice: "5.647396",
+            unitvalue: "6.103947",
+            valuation: "231.95",
+            original_currency: { id: "EUR" },
+            vdate: "2026-05-15"
+          }
+        ]
+      },
+      raw_transactions_payload: [
+        {
+          id: 901,
+          id_account: "13",
+          date: "2025-10-02",
+          value: "5.52",
+          wording: "S&P 500 Swap Pea Eur (Acc) Plan d'épargne exécuté",
+          type: "market_order"
+        },
+        {
+          id: 902,
+          id_account: "13",
+          date: "2025-10-03",
+          value: "-1.00",
+          wording: "FRAIS",
+          type: "fee"
+        }
+      ]
+    )
+    AccountProvider.create!(account: investment_account, provider: powens_investment)
+
+    security = securities(:aapl)
+    upstream_resolver = mock("Security::Resolver")
+    Security::Resolver.expects(:new).with("FR0013412285").returns(upstream_resolver)
+    upstream_resolver.expects(:resolve).returns(security)
+
+    assert_difference [ "Trade.count", "Transaction.count", "Holding.count" ], 1 do
+      PowensAccount::Processor.new(powens_investment).process
+    end
+
+    market_order = investment_account.entries.find_by!(external_id: "powens_901", source: "powens")
+    fee = investment_account.entries.find_by!(external_id: "powens_902", source: "powens")
+
+    assert market_order.trade?
+    assert_equal BigDecimal("5.52"), market_order.amount
+    assert_equal "Buy", market_order.trade.investment_activity_label
+    assert fee.transaction?
+    assert_equal BigDecimal("1.00"), fee.amount
+    assert_equal BigDecimal("231.95"), investment_account.reload.balance
+    assert_equal 0, investment_account.cash_balance
+    assert_equal "EUR", investment_account.currency
+  end
 end
