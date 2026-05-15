@@ -20,6 +20,7 @@ class PowensAccount < ApplicationRecord
     "checking" => { type: "Depository", subtype: "checking" },
     "card" => { type: "CreditCard", subtype: "credit_card" },
     "loan" => { type: "Loan", subtype: nil },
+    "pret" => { type: "Loan", subtype: nil },
     "savings" => { type: "Depository", subtype: "savings" },
     "deposit" => { type: "Depository", subtype: "checking" },
     "market" => { type: "Depository", subtype: "money_market" }
@@ -30,15 +31,25 @@ class PowensAccount < ApplicationRecord
   end
 
   def suggested_account_type
-    normalized_type = account_type.to_s.downcase
+    normalized_type = normalized_account_type
     return "CreditCard" if normalized_type.include?("card")
-    return "Loan" if normalized_type.include?("loan") || normalized_type.include?("mortgage")
+    if normalized_type.include?("loan") || normalized_type.include?("mortgage") || normalized_type.include?("pret")
+      return "Loan"
+    end
 
     CASH_ACCOUNT_TYPE_MAP[normalized_type]&.dig(:type) || "Depository"
   end
 
   def suggested_subtype
-    CASH_ACCOUNT_TYPE_MAP[account_type.to_s.downcase]&.dig(:subtype)
+    CASH_ACCOUNT_TYPE_MAP[normalized_account_type]&.dig(:subtype)
+  end
+
+  def current_balance_for(account_type)
+    normalize_balance_for(account_type, current_balance)
+  end
+
+  def available_balance_for(account_type)
+    normalize_balance_for(account_type, available_balance)
   end
 
   def upsert_powens_snapshot!(account_snapshot)
@@ -79,6 +90,16 @@ class PowensAccount < ApplicationRecord
       return value.with_indifferent_access[:name].presence || value.with_indifferent_access[:id] if value.is_a?(Hash)
 
       value
+    end
+
+    def normalized_account_type
+      I18n.transliterate(account_type.to_s.downcase)
+    end
+
+    def normalize_balance_for(account_type, balance)
+      return nil if balance.nil?
+
+      %w[CreditCard Loan].include?(account_type.to_s) ? balance.abs : balance
     end
 
     def parse_decimal(value)

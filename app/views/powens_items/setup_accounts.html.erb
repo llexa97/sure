@@ -6,11 +6,14 @@
         <% if @powens_accounts.any? %>
           <%= form_with url: complete_account_setup_powens_item_path(@powens_item), method: :post, local: true, class: "space-y-3", data: { turbo_frame: :_top } do %>
             <% @powens_accounts.each do |account| %>
+              <% display_balance = account.current_balance_for(account.suggested_account_type) %>
               <label class="flex items-center gap-3 p-3 bg-container rounded-lg">
                 <%= check_box_tag "account_ids[]", account.id, true %>
                 <span>
                   <span class="block text-primary"><%= account.name %></span>
-                  <span class="block text-secondary text-sm"><%= account.currency %> &middot; <%= account.current_balance %></span>
+                  <span class="block text-secondary text-sm">
+                    <%= account.currency %> &middot; <%= display_balance %>
+                  </span>
                 </span>
               </label>
             <% end %>

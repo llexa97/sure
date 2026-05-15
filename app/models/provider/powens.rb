@@ -126,15 +126,10 @@ class Provider::Powens < Provider
     }.compact
     query[:all] = "" if all
 
-    payload = fetch_paginated(
-      "#{base_url}/users/me/transactions",
+    fetch_paginated(
+      "#{base_url}/users/me/accounts/#{account_id}/transactions",
       access_token: access_token,
       query: query
-    )
-
-    account_id = account_id.to_s
-    payload.merge(
-      transactions: Array(payload[:transactions]).select { |transaction| transaction.with_indifferent_access[:id_account].to_s == account_id }
     )
   end
 

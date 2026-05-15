@@ -54,4 +54,23 @@ class PowensAccount::ProcessorTest < ActiveSupport::TestCase
     assert_equal "-15.25", entry.transaction.extra.dig("powens", "raw_value")
     assert_equal "sure_expense_positive", entry.transaction.extra.dig("powens", "amount_convention")
   end
+
+  test "stores loan balances as positive liabilities" do
+    loan_account = accounts(:loan)
+    powens_loan = PowensAccount.create!(
+      powens_item: @powens_item,
+      account_id: "12",
+      name: "Powens Loan",
+      currency: "EUR",
+      account_type: "loan",
+      current_balance: BigDecimal("-13960.44"),
+      raw_transactions_payload: []
+    )
+    AccountProvider.create!(account: loan_account, provider: powens_loan)
+
+    PowensAccount::Processor.new(powens_loan).process
+
+    assert_equal BigDecimal("13960.44"), loan_account.reload.balance
+    assert_equal BigDecimal("13960.44"), loan_account.cash_balance
+  end
 end

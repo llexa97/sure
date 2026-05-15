@@ -58,13 +58,12 @@ class Provider::PowensTest < ActiveSupport::TestCase
     assert_equal 42, result[:id_user]
   end
 
-  test "lists transactions with pagination and filters by account id" do
+  test "lists account transactions with pagination" do
     first_page = {
       transactions: [
-        { id: 1, id_account: 11, wording: "Account 11" },
-        { id: 2, id_account: 12, wording: "Account 12" }
+        { id: 1, id_account: 11, wording: "Account 11" }
       ],
-      _links: { next: { href: "/2.0/users/me/transactions?page=2" } }
+      _links: { next: { href: "/2.0/users/me/accounts/11/transactions?page=2" } }
     }
     second_page = {
       transactions: [
@@ -74,7 +73,7 @@ class Provider::PowensTest < ActiveSupport::TestCase
 
     Provider::Powens.expects(:get)
       .with(
-        "https://demo-sandbox.biapi.pro/2.0/users/me/transactions",
+        "https://demo-sandbox.biapi.pro/2.0/users/me/accounts/11/transactions",
         has_entries(
           headers: { "Authorization" => "Bearer user-token" },
           query: has_entries(limit: Provider::Powens::DEFAULT_TRANSACTION_LIMIT, filter: "date")
@@ -84,7 +83,7 @@ class Provider::PowensTest < ActiveSupport::TestCase
 
     Provider::Powens.expects(:get)
       .with(
-        "https://demo-sandbox.biapi.pro/2.0/users/me/transactions?page=2",
+        "https://demo-sandbox.biapi.pro/2.0/users/me/accounts/11/transactions?page=2",
         has_entries(headers: { "Authorization" => "Bearer user-token" })
       )
       .returns(Response.new(code: 200, body: second_page.to_json, headers: {}))

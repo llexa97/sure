@@ -81,13 +81,16 @@ class PowensItemsController < ApplicationController
     selected = params.fetch(:account_ids, [])
     selected.each do |powens_account_id|
       provider_account = @powens_item.powens_accounts.find(powens_account_id)
+      account_type = suggested_accountable_type(provider_account)
+      balance = provider_account.current_balance_for(account_type) || 0
+
       account = Account.create_and_sync(
         {
           family: Current.family,
           name: provider_account.name,
-          balance: provider_account.current_balance || 0,
+          balance: balance,
           currency: provider_account.currency || Current.family.primary_currency_code,
-          accountable_type: suggested_accountable_type(provider_account),
+          accountable_type: account_type,
           accountable_attributes: suggested_accountable_attributes(provider_account)
         },
         skip_initial_sync: true

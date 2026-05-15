@@ -105,10 +105,10 @@ class PowensItem::Importer
     end
 
     def determine_sync_start_date
-      last_sync_date = powens_item.last_synced_at&.to_date
-      return 90.days.ago.to_date unless last_sync_date
-
-      [ last_sync_date - 7.days, 90.days.ago.to_date ].max
+      [
+        powens_item.last_synced_at&.to_date || 90.days.ago.to_date,
+        90.days.ago.to_date
+      ].compact.min
     end
 
     def include_pending?

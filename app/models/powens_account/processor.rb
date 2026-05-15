@@ -16,7 +16,7 @@ class PowensAccount::Processor
   private
     def process_account!
       account = powens_account.current_account
-      balance = powens_account.current_balance || account.balance
+      balance = powens_account.current_balance_for(account.accountable_type) || account.balance
 
       account.update!(
         balance: balance,

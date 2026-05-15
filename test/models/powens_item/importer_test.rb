@@ -42,10 +42,22 @@ class PowensItem::ImporterTest < ActiveSupport::TestCase
     end
   end
 
+  test "uses rolling ninety day lookback after previous sync" do
+    @powens_item.update!(last_synced_at: Date.current)
+    provider = provider_with_transactions
+
+    importer = PowensItem::Importer.new(@powens_item, powens_provider: provider)
+    importer.send(:import_transactions, @powens_account)
+
+    assert_equal 90.days.ago.to_date, provider.last_options[:min_date]
+  end
+
   private
     def provider_with_transactions
       provider = Object.new
-      provider.define_singleton_method(:list_account_transactions) do |_access_token, _account_id, **_options|
+      provider.define_singleton_method(:last_options) { @last_options }
+      provider.define_singleton_method(:list_account_transactions) do |_access_token, _account_id, **options|
+        @last_options = options
         {
           transactions: [
             { id: 1, coming: "false", wording: "Posted" },
