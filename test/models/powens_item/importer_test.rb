@@ -42,8 +42,19 @@ class PowensItem::ImporterTest < ActiveSupport::TestCase
     end
   end
 
-  test "uses rolling ninety day lookback after previous sync" do
+  test "omits min date for first transaction import on linked account" do
+    AccountProvider.create!(account: accounts(:depository), provider: @powens_account)
+    provider = provider_with_transactions
+
+    importer = PowensItem::Importer.new(@powens_item, powens_provider: provider)
+    importer.send(:import_transactions, @powens_account)
+
+    assert_nil provider.last_options[:min_date]
+  end
+
+  test "uses rolling ninety day lookback after previous transaction import" do
     @powens_item.update!(last_synced_at: Date.current)
+    @powens_account.update!(raw_transactions_payload: [ { id: 999, coming: false, wording: "Existing" } ])
     provider = provider_with_transactions
 
     importer = PowensItem::Importer.new(@powens_item, powens_provider: provider)

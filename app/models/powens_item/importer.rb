@@ -93,7 +93,7 @@ class PowensItem::Importer
       transactions_payload = powens_provider.list_account_transactions(
         powens_item.access_token,
         account.account_id,
-        min_date: determine_sync_start_date,
+        min_date: determine_sync_start_date(account),
         max_date: Date.current
       )
 
@@ -104,11 +104,18 @@ class PowensItem::Importer
       { count: transactions.count }
     end
 
-    def determine_sync_start_date
+    def determine_sync_start_date(account)
+      return nil if first_transaction_import?(account)
+
       [
         powens_item.last_synced_at&.to_date || 90.days.ago.to_date,
         90.days.ago.to_date
       ].compact.min
+    end
+
+    def first_transaction_import?(account)
+      Array(account.raw_transactions_payload).empty? &&
+        account.current_account&.entries&.where(source: "powens")&.none?
     end
 
     def include_pending?
