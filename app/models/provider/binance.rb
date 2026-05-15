@@ -87,6 +87,22 @@ class Provider::Binance
     signed_get("/api/v3/myTrades", extra_params: params)
   end
 
+  # Lists Auto-Invest plans for the authenticated user.
+  # @param plan_type [String] "PORTFOLIO" or "SINGLE"
+  def get_auto_invest_plans(plan_type:)
+    signed_get("/sapi/v1/lending/auto-invest/plan/list", extra_params: { "planType" => plan_type })
+  end
+
+  # Returns the execution history of an Auto-Invest plan.
+  # Binance paginates; callers should walk pages via the `current` parameter
+  # until `list.size < size` is observed.
+  def get_auto_invest_history(plan_id:, current: 1, size: 100)
+    signed_get(
+      "/sapi/v1/lending/auto-invest/history/list",
+      extra_params: { "planId" => plan_id.to_s, "size" => size.to_s, "current" => current.to_s }
+    )
+  end
+
   private
 
     def signed_get(path, extra_params: {})

@@ -34,6 +34,12 @@ class BinanceAccount::Processor
     end
 
     fetch_and_process_trades
+
+    begin
+      fetch_and_process_auto_invest
+    rescue StandardError => e
+      Rails.logger.error "BinanceAccount::Processor - auto-invest failed for #{binance_account.id}: #{e.message}"
+    end
   end
 
   private
@@ -55,6 +61,122 @@ class BinanceAccount::Processor
       )
 
       binance_account.update!(extra: binance_account.extra.to_h.deep_merge(stale_extra))
+    end
+
+    def fetch_and_process_auto_invest
+      provider = binance_account.binance_item&.binance_provider
+      return unless provider
+
+      plans = fetch_all_auto_invest_plans(provider)
+      return if plans.empty?
+
+      existing_payload = binance_account.raw_transactions_payload || {}
+      existing_executions = Array(existing_payload.dig("auto_invest", "executions"))
+      existing_ids = existing_executions.map { |e| e["id"].to_s }.to_set
+
+      new_executions = []
+
+      plans.each do |plan|
+        page = 1
+        loop do
+          response = provider.get_auto_invest_history(plan_id: plan["planId"], current: page, size: 100)
+          break unless response.is_a?(Hash)
+
+          rows = Array(response["list"])
+          break if rows.empty?
+
+          fresh = rows.reject { |row| existing_ids.include?(row["id"].to_s) }
+          new_executions.concat(fresh)
+          existing_ids.merge(fresh.map { |row| row["id"].to_s })
+
+          break if rows.size < 100
+          page += 1
+          break if page > 50
+        end
+      end
+
+      merged_executions = (existing_executions + new_executions).uniq { |e| e["id"].to_s }
+      binance_account.update!(raw_transactions_payload: existing_payload.deep_merge(
+        "auto_invest" => {
+          "plans" => plans,
+          "executions" => merged_executions,
+          "fetched_at" => Time.current.iso8601
+        }
+      ))
+
+      process_auto_invest_executions(new_executions)
+    end
+
+    def fetch_all_auto_invest_plans(provider)
+      %w[PORTFOLIO SINGLE].flat_map do |plan_type|
+        response = provider.get_auto_invest_plans(plan_type: plan_type)
+        Array(response.is_a?(Hash) ? response["plans"] : nil)
+      rescue Provider::Binance::ApiError => e
+        Rails.logger.warn "BinanceAccount::Processor - auto-invest plans (#{plan_type}) failed: #{e.message}"
+        []
+      end
+    end
+
+    def process_auto_invest_executions(executions)
+      executions.each { |execution| process_auto_invest_execution(execution) }
+    rescue StandardError => e
+      Rails.logger.error "BinanceAccount::Processor - auto-invest execution processing failed: #{e.message}"
+    end
+
+    def process_auto_invest_execution(execution)
+      return unless execution.is_a?(Hash)
+      return unless execution["transactionStatus"].to_s.upcase == "SUCCESS"
+
+      account = binance_account.current_account
+      return unless account
+
+      base_symbol = execution["targetAsset"].to_s.upcase
+      quote_symbol = execution["sourceAsset"].to_s.upcase
+      return if base_symbol.blank? || quote_symbol.blank?
+
+      external_id = "binance_ai_#{execution['id']}"
+      return if account.entries.exists?(external_id: external_id)
+
+      ticker = "CRYPTO:#{base_symbol}"
+      security = BinanceAccount::SecurityResolver.resolve(ticker, base_symbol)
+      return unless security
+
+      qty = execution["targetAssetAmount"].to_d
+      return if qty.zero?
+
+      gross_quote_amount = execution["sourceAssetAmount"].to_d
+      execution_price = execution["executionPrice"].to_d
+      date = Time.zone.at(execution["transactionDateTime"].to_i / 1000).to_date
+
+      amount_usd_raw = quote_to_usd(gross_quote_amount, quote_symbol, date: date)
+      price_usd = quote_to_usd(execution_price, quote_symbol, date: date)
+      if amount_usd_raw.nil? || price_usd.nil?
+        Rails.logger.warn "BinanceAccount::Processor - skipping auto-invest #{execution['id']}: could not convert #{quote_symbol} to USD"
+        return
+      end
+
+      fee_quote = execution["transactionFee"].to_d
+      fee_currency = execution["transactionFeeUnit"].to_s.upcase.presence || quote_symbol
+      fee_usd = fee_quote.zero? ? 0 : (quote_to_usd(fee_quote, fee_currency, date: date) || 0)
+
+      account.entries.create!(
+        date: date,
+        name: "Auto-Invest #{qty.round(8)} #{base_symbol}",
+        amount: -amount_usd_raw.round(2),
+        currency: "USD",
+        external_id: external_id,
+        source: "binance",
+        entryable: Trade.new(
+          security: security,
+          qty: qty,
+          price: price_usd,
+          currency: "USD",
+          fee: fee_usd,
+          investment_activity_label: "Buy"
+        )
+      )
+    rescue StandardError => e
+      Rails.logger.error "BinanceAccount::Processor - failed to process auto-invest #{execution['id']}: #{e.message}"
     end
 
     def fetch_and_process_trades
