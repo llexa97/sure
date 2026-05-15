@@ -8,6 +8,8 @@ fr:
       success: Configuration Binance mise à jour.
     destroy:
       success: Connexion Binance mise en file d'attente pour suppression.
+    select_accounts:
+      no_item: Configurez vos identifiants API Binance avant de lier un compte.
     setup_accounts:
       title: Importer le compte Binance
       subtitle: Sélectionnez les portefeuilles à suivre

@@ -8,6 +8,8 @@ en:
       success: Successfully updated Binance configuration.
     destroy:
       success: Scheduled Binance connection for deletion.
+    select_accounts:
+      no_item: Configure Binance API credentials before linking an account.
     setup_accounts:
       title: Import Binance Account
       subtitle: Select which portfolios to track
