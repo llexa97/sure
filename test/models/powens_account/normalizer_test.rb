@@ -29,7 +29,7 @@ class PowensAccount::NormalizerTest < ActiveSupport::TestCase
     )
 
     assert_equal "powens_123", transaction[:external_id]
-    assert_equal BigDecimal("-42.50"), transaction[:amount]
+    assert_equal BigDecimal("42.50"), transaction[:amount]
     assert_equal Date.new(2026, 1, 15), transaction[:date]
     assert_equal "EUR", transaction[:currency]
     assert_equal "CARTE RESTAURANT", transaction[:name]
@@ -50,6 +50,7 @@ class PowensAccount::NormalizerTest < ActiveSupport::TestCase
     )
 
     assert_match(/\Apowens_hash_/, transaction[:external_id])
+    assert_equal BigDecimal("-12.34"), transaction[:amount]
     assert transaction[:pending]
   end
 

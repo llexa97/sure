@@ -47,9 +47,11 @@ class PowensAccount::ProcessorTest < ActiveSupport::TestCase
     assert_equal "EUR", @account.currency
     assert_equal "powens", entry.source
     assert_equal "powens_123", entry.external_id
-    assert_equal BigDecimal("-15.25"), entry.amount
+    assert_equal BigDecimal("15.25"), entry.amount
     assert entry.transaction.pending?
     assert_equal true, entry.transaction.extra.dig("powens", "pending")
     assert_equal "123", entry.transaction.extra.dig("powens", "transaction_id").to_s
+    assert_equal "-15.25", entry.transaction.extra.dig("powens", "raw_value")
+    assert_equal "sure_expense_positive", entry.transaction.extra.dig("powens", "amount_convention")
   end
 end

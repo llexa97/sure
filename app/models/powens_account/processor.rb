@@ -41,6 +41,8 @@ class PowensAccount::Processor
           powens: {
             pending: tx[:pending],
             transaction_id: tx[:raw]["id"] || tx[:raw][:id],
+            raw_value: tx[:raw]["value"] || tx[:raw][:value] || tx[:raw]["gross_value"] || tx[:raw][:gross_value],
+            amount_convention: "sure_expense_positive",
             coming: tx[:pending],
             type: tx[:raw]["type"] || tx[:raw][:type]
           }

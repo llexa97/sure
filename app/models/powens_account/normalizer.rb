@@ -12,12 +12,13 @@ class PowensAccount::Normalizer
       amount = tx[:value].presence || tx[:gross_value].presence
       return nil if date.blank? || amount.blank?
 
-      parsed_amount = BigDecimal(amount.to_s)
+      provider_amount = BigDecimal(amount.to_s)
+      normalized_amount = -provider_amount
       name = tx[:wording].presence || tx[:simplified_wording].presence || tx[:original_wording].presence || "Powens transaction"
 
       {
-        external_id: external_id(tx, amount: parsed_amount, date: date),
-        amount: parsed_amount,
+        external_id: external_id(tx, amount: provider_amount, date: date),
+        amount: normalized_amount,
         currency: account_currency,
         date: Date.parse(date.to_s),
         name: name.to_s.squish.presence || "Powens transaction",
