@@ -39,11 +39,12 @@
       <% if Current.user&.admin? %>
         <div class="flex items-center gap-2">
           <% if powens_item.requires_update? && powens_item.connection_id.present? %>
-            <%= icon(
-              "link",
-              as_button: true,
+            <%= render DS::Link.new(
+              icon: "link",
+              variant: "icon",
               href: reconnect_powens_item_path(powens_item),
-              frame: :_top
+              title: "Reconnect Powens",
+              data: { turbo: false }
             ) %>
           <% end %>
 

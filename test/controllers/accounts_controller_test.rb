@@ -14,6 +14,24 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert_select "p.ml-auto.privacy-sensitive"
   end
 
+  test "powens reconnect action renders as a non-turbo get link" do
+    powens_item = PowensItem.create!(
+      family: @user.family,
+      name: "Powens Connection",
+      connector_name: "Credit Mutuel",
+      access_token: "powens-token",
+      connection_id: "powens-connection",
+      reference: SecureRandom.uuid,
+      status: :requires_update
+    )
+
+    get accounts_url
+
+    assert_response :success
+    assert_select "a[href='#{reconnect_powens_item_path(powens_item)}'][data-turbo='false']", count: 1
+    assert_select "form[action='#{reconnect_powens_item_path(powens_item)}']", count: 0
+  end
+
   test "should get show" do
     get account_url(@account)
     assert_response :success
