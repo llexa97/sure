@@ -33,12 +33,9 @@ class PowensItem::Importer
         accounts_updated += 1
 
         if account.current_account.present?
-          if account.investment?
-            import_holdings(account)
-          else
-            tx_result = import_transactions(account)
-            transactions_imported += tx_result[:count]
-          end
+          import_holdings(account) if account.investment?
+          tx_result = import_transactions(account)
+          transactions_imported += tx_result[:count]
         end
       rescue Provider::Powens::PowensError => e
         accounts_failed += 1

@@ -10,11 +10,8 @@ class PowensAccount::Processor
     return unless powens_account.current_account.present?
 
     process_account!
-    if powens_account.investment?
-      process_investments
-    else
-      process_transactions
-    end
+    process_investments if powens_account.investment?
+    process_transactions
   end
 
   private
