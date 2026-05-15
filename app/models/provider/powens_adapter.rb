@@ -37,7 +37,7 @@ class Provider::PowensAdapter < Provider::Base
   end
 
   def self.supported_account_types
-    %w[Depository CreditCard Loan]
+    %w[Depository CreditCard Loan Investment]
   end
 
   def self.connection_configs(family:)

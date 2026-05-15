@@ -6,6 +6,7 @@ class PowensAccount < ApplicationRecord
     encrypts :number
     encrypts :raw_payload
     encrypts :raw_transactions_payload
+    encrypts :raw_holdings_payload
   end
 
   belongs_to :powens_item
@@ -22,8 +23,21 @@ class PowensAccount < ApplicationRecord
     "loan" => { type: "Loan", subtype: nil },
     "pret" => { type: "Loan", subtype: nil },
     "savings" => { type: "Depository", subtype: "savings" },
-    "deposit" => { type: "Depository", subtype: "checking" },
-    "market" => { type: "Depository", subtype: "money_market" }
+    "deposit" => { type: "Depository", subtype: "checking" }
+  }.freeze
+
+  INVESTMENT_ACCOUNT_TYPE_MAP = {
+    "market" => { type: "Investment", subtype: "brokerage" },
+    "pea" => { type: "Investment", subtype: "pea" },
+    "lifeinsurance" => { type: "Investment", subtype: "assurance_vie" },
+    "capitalisation" => { type: "Investment", subtype: "other" },
+    "perp" => { type: "Investment", subtype: "retirement" },
+    "per" => { type: "Investment", subtype: "retirement" },
+    "pee" => { type: "Investment", subtype: "retirement" },
+    "perco" => { type: "Investment", subtype: "retirement" },
+    "rsp" => { type: "Investment", subtype: "retirement" },
+    "madelin" => { type: "Investment", subtype: "retirement" },
+    "article83" => { type: "Investment", subtype: "retirement" }
   }.freeze
 
   def current_account
@@ -37,11 +51,19 @@ class PowensAccount < ApplicationRecord
       return "Loan"
     end
 
-    CASH_ACCOUNT_TYPE_MAP[normalized_type]&.dig(:type) || "Depository"
+    INVESTMENT_ACCOUNT_TYPE_MAP[normalized_type]&.dig(:type) ||
+      CASH_ACCOUNT_TYPE_MAP[normalized_type]&.dig(:type) ||
+      "Depository"
   end
 
   def suggested_subtype
-    CASH_ACCOUNT_TYPE_MAP[normalized_account_type]&.dig(:subtype)
+    normalized_type = normalized_account_type
+    INVESTMENT_ACCOUNT_TYPE_MAP[normalized_type]&.dig(:subtype) ||
+      CASH_ACCOUNT_TYPE_MAP[normalized_type]&.dig(:subtype)
+  end
+
+  def investment?
+    INVESTMENT_ACCOUNT_TYPE_MAP.key?(normalized_account_type)
   end
 
   def current_balance_for(account_type)
@@ -78,6 +100,10 @@ class PowensAccount < ApplicationRecord
 
   def upsert_powens_transactions_snapshot!(transactions)
     update!(raw_transactions_payload: transactions)
+  end
+
+  def upsert_powens_holdings_snapshot!(payload)
+    update!(raw_holdings_payload: payload)
   end
 
   private

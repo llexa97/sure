@@ -66,5 +66,61 @@ class PowensAccount::Normalizer
     def currency_code(value)
       value.is_a?(Hash) ? value.with_indifferent_access[:id] : value
     end
+
+    def normalize_investment(raw_investment, account_currency:)
+      inv = raw_investment.with_indifferent_access
+      quantity = parse_decimal(inv[:quantity])
+      unit_value = parse_decimal(inv[:unitvalue])
+      valuation = parse_decimal(inv[:valuation])
+      return nil if quantity.nil? || quantity.zero?
+      return nil if unit_value.nil? && valuation.nil?
+
+      unit_value ||= (valuation / quantity if quantity.nonzero?)
+      amount = valuation || (unit_value * quantity)
+
+      {
+        external_id: external_investment_id(inv),
+        ticker: inv[:stock_symbol].to_s.strip.presence,
+        isin: inv[:code_type].to_s.upcase == "ISIN" ? inv[:code].to_s.strip.presence : nil,
+        code: inv[:code].to_s.strip.presence,
+        code_type: inv[:code_type].to_s.strip.presence,
+        label: inv[:label].to_s.strip.presence,
+        quantity: quantity,
+        unit_price: parse_decimal(inv[:unitprice]),
+        unit_value: unit_value,
+        amount: amount,
+        currency: (inv[:original_currency].is_a?(Hash) ? inv[:original_currency].with_indifferent_access[:id] : inv[:original_currency]).presence || account_currency,
+        date: parse_date(inv[:vdate]) || Date.current,
+        raw: inv.to_h
+      }
+    rescue ArgumentError, TypeError
+      nil
+    end
+
+    def external_investment_id(inv)
+      provider_id = inv[:id].presence
+      return "powens_inv_#{provider_id}" if provider_id.present?
+
+      digest_input = [ inv[:code], inv[:code_type], inv[:label], inv[:id_account] ].join("|")
+      "powens_inv_hash_#{Digest::SHA256.hexdigest(digest_input)}"
+    end
+
+    private
+
+    def parse_decimal(value)
+      return nil if value.nil? || value.to_s.strip.empty?
+
+      BigDecimal(value.to_s)
+    rescue ArgumentError, TypeError
+      nil
+    end
+
+    def parse_date(value)
+      return nil if value.blank?
+
+      Date.parse(value.to_s)
+    rescue ArgumentError, TypeError
+      nil
+    end
   end
 end

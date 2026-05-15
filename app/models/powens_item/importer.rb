@@ -33,8 +33,12 @@ class PowensItem::Importer
         accounts_updated += 1
 
         if account.current_account.present?
-          tx_result = import_transactions(account)
-          transactions_imported += tx_result[:count]
+          if account.investment?
+            import_holdings(account)
+          else
+            tx_result = import_transactions(account)
+            transactions_imported += tx_result[:count]
+          end
         end
       rescue Provider::Powens::PowensError => e
         accounts_failed += 1
@@ -87,6 +91,11 @@ class PowensItem::Importer
       account.save! if account.new_record?
       account.upsert_powens_snapshot!(data)
       account
+    end
+
+    def import_holdings(account)
+      payload = powens_provider.list_account_investments(powens_item.access_token, account.account_id)
+      account.upsert_powens_holdings_snapshot!(payload)
     end
 
     def import_transactions(account)

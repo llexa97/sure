@@ -10,7 +10,11 @@ class PowensAccount::Processor
     return unless powens_account.current_account.present?
 
     process_account!
-    process_transactions
+    if powens_account.investment?
+      process_investments
+    else
+      process_transactions
+    end
   end
 
   private
@@ -18,11 +22,28 @@ class PowensAccount::Processor
       account = powens_account.current_account
       balance = powens_account.current_balance_for(account.accountable_type) || account.balance
 
-      account.update!(
-        balance: balance,
-        cash_balance: balance,
-        currency: powens_account.currency || account.currency
-      )
+      if account.accountable_type == "Investment"
+        # For investment accounts, the provider balance is the total portfolio
+        # valuation. Cash inside the account is tracked separately (not surfaced
+        # by Powens here), so we keep cash_balance at zero and let the holdings
+        # carry the value.
+        account.update!(
+          balance: balance,
+          cash_balance: 0,
+          currency: powens_account.currency || account.currency
+        )
+      else
+        account.update!(
+          balance: balance,
+          cash_balance: balance,
+          currency: powens_account.currency || account.currency
+        )
+      end
+    end
+
+    def process_investments
+      resolver = PowensAccount::Investments::SecurityResolver.new
+      PowensAccount::Investments::HoldingsProcessor.new(powens_account, security_resolver: resolver).process
     end
 
     def process_transactions

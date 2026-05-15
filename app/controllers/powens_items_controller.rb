@@ -84,17 +84,19 @@ class PowensItemsController < ApplicationController
       account_type = suggested_accountable_type(provider_account)
       balance = provider_account.current_balance_for(account_type) || 0
 
-      account = Account.create_and_sync(
-        {
-          family: Current.family,
-          name: provider_account.name,
-          balance: balance,
-          currency: provider_account.currency || Current.family.primary_currency_code,
-          accountable_type: account_type,
-          accountable_attributes: suggested_accountable_attributes(provider_account)
-        },
-        skip_initial_sync: true
-      )
+      attributes = {
+        family: Current.family,
+        name: provider_account.name,
+        balance: balance,
+        currency: provider_account.currency || Current.family.primary_currency_code,
+        accountable_type: account_type,
+        accountable_attributes: suggested_accountable_attributes(provider_account)
+      }
+      # For investment accounts, the provider balance is the portfolio valuation,
+      # not cash. The holdings sync repopulates it correctly; default to zero.
+      attributes[:cash_balance] = 0 if account_type == "Investment"
+
+      account = Account.create_and_sync(attributes, skip_initial_sync: true)
       AccountProvider.find_or_create_by!(account: account, provider: provider_account)
     end
 

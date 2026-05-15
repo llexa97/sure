@@ -117,6 +117,18 @@ class Provider::Powens < Provider
     )
   end
 
+  def list_account_investments(access_token, account_id, all: true)
+    query = {}
+    query[:all] = "" if all
+
+    request(
+      :get,
+      "#{base_url}/users/me/accounts/#{account_id}/investments",
+      access_token: access_token,
+      query: query
+    )
+  end
+
   def list_account_transactions(access_token, account_id, min_date: nil, max_date: nil, limit: DEFAULT_TRANSACTION_LIMIT, all: false)
     query = {
       limit: limit,
