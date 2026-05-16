@@ -46,13 +46,16 @@ class GocardlessAccount::Normalizer
       return nil if date.blank?
 
       amount_hash = tx[:transactionAmount] || tx[:transaction_amount] || {}
-      amount = BigDecimal(amount_hash[:amount].to_s)
+      # raw_amount follows GoCardless/banking convention: positive = income, negative = expense.
+      # App convention is the opposite, so we negate for storage.
+      raw_amount = BigDecimal(amount_hash[:amount].to_s)
+      amount = -raw_amount
       currency = amount_hash[:currency]
       notes = tx[:remittanceInformationUnstructured].presence || Array(tx[:remittanceInformationUnstructuredArray]).join(" ").presence || tx[:additionalInformation].presence
-      payee = payee_name(tx, amount) || notes || "GoCardless transaction"
+      payee = payee_name(tx, raw_amount) || notes || "GoCardless transaction"
 
       {
-        external_id: external_id(tx, amount: amount, date: date, booked: booked),
+        external_id: external_id(tx, amount: raw_amount, date: date, booked: booked),
         amount: amount,
         currency: currency,
         date: Date.parse(date.to_s),
