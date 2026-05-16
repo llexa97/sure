@@ -99,8 +99,7 @@ class PowensItem::Importer
       transactions_payload = powens_provider.list_account_transactions(
         powens_item.access_token,
         account.account_id,
-        min_date: determine_sync_start_date(account),
-        max_date: Date.current
+        min_date: determine_sync_start_date(account)
       )
 
       transactions = Array(transactions_payload[:transactions])

@@ -63,6 +63,15 @@ class PowensItem::ImporterTest < ActiveSupport::TestCase
     assert_equal 90.days.ago.to_date, provider.last_options[:min_date]
   end
 
+  test "does not cap transactions at the server current date" do
+    provider = provider_with_transactions
+
+    importer = PowensItem::Importer.new(@powens_item, powens_provider: provider)
+    importer.send(:import_transactions, @powens_account)
+
+    assert_not provider.last_options.key?(:max_date)
+  end
+
   private
     def provider_with_transactions
       provider = Object.new
