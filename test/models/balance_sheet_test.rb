@@ -61,6 +61,19 @@ class BalanceSheetTest < ActiveSupport::TestCase
     assert_equal 5000, asset_groups.find { |ag| ag.name == I18n.t("accounts.types.other_asset") }.total
   end
 
+  test "groups cash accounts by their account subtype" do
+    checking = create_account(name: "Checking", balance: 1000, accountable: Depository.new(subtype: "checking"))
+    savings = create_account(name: "Savings", balance: 2000, accountable: Depository.new(subtype: "savings"))
+    create_account(name: "Brokerage", balance: 3000, accountable: Investment.new(subtype: "brokerage"))
+
+    cash_group = BalanceSheet.new(@family).assets.account_groups.find { |ag| ag.key == "depository" }
+
+    assert cash_group.grouped_by_subtype?
+    assert_equal [ "Checking", "Savings" ], cash_group.subtype_groups.map(&:name)
+    assert_equal [ [ checking ], [ savings ] ], cash_group.subtype_groups.map { |group| group.accounts.map(&:account) }
+    assert_equal [ 1000, 2000 ], cash_group.subtype_groups.map(&:total)
+  end
+
   test "calculates liability group totals" do
     create_account(balance: 1000, accountable: CreditCard.new)
     create_account(balance: 2000, accountable: CreditCard.new)

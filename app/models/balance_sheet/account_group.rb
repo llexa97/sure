@@ -47,6 +47,26 @@ class BalanceSheet::AccountGroup
     accounts.any?(&:syncing?)
   end
 
+  def grouped_by_subtype?
+    accounts.any? &&
+      classification == "asset" &&
+      accounts.all? { |account| account.balance_type == :cash } &&
+      subtype_groups.many?
+  end
+
+  def subtype_groups
+    @subtype_groups ||= accounts.group_by { |account| subtype_key(account) }
+                                .map do |subtype, account_rows|
+                                  BalanceSheet::AccountSubtypeGroup.new(
+                                    key: subtype,
+                                    name: account_rows.first.short_subtype_label,
+                                    accounts: account_rows,
+                                    account_group: self
+                                  )
+                                end
+                                .sort_by { |group| subtype_sort_key(group.key, group.name) }
+  end
+
   # "asset" or "liability"
   def classification
     classification_group.classification
@@ -57,5 +77,16 @@ class BalanceSheet::AccountGroup
   end
 
   private
+    UNGROUPED_SUBTYPE_KEY = "__ungrouped__"
+
     attr_reader :classification_group
+
+    def subtype_key(account)
+      account.subtype.presence || UNGROUPED_SUBTYPE_KEY
+    end
+
+    def subtype_sort_key(subtype, name)
+      subtype_order = accountable_type.const_defined?(:SUBTYPES) ? accountable_type::SUBTYPES.keys : []
+      [ subtype_order.index(subtype) || Float::INFINITY, name ]
+    end
 end
