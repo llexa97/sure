@@ -61,6 +61,9 @@ class Provider::Openai::AutoMerchantDetector
   end
 
   def instructions
+    custom = family&.custom_auto_merchant_detector_instructions.presence
+    return custom if custom
+
     if custom_provider
       simple_instructions
     else

@@ -12,6 +12,11 @@ en:
         openai_label: OpenAI
         disable_ai: Disable AI Assistant
         prompt_instructions: Prompt Instructions
+        default_prompt: View default prompt
+        custom_override: Your custom prompt (overrides the default)
+        custom_placeholder: Leave empty to use the default prompt above
+        custom_hint: When set, this text fully replaces the default prompt sent to the model. No variables are interpolated — write everything you want literally.
+        save_button: Save changes
         main_system_prompt:
           title: Main System Prompt
           subtitle: Core instructions that define how the AI assistant behaves in all chat conversations
@@ -21,6 +26,8 @@ en:
         merchant_detector:
           title: Merchant Detector
           subtitle: AI identifies and enriches transaction data with merchant information
+      update:
+        updated: AI prompts updated successfully
     payments:
       show:
         page_title: Payments

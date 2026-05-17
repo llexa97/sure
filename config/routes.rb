@@ -276,7 +276,7 @@ Rails.application.routes.draw do
     end
     resources :sso_identities, only: :destroy
     resource :api_key, only: [ :show, :new, :create, :destroy ]
-    resource :ai_prompts, only: :show
+    resource :ai_prompts, only: [ :show, :update ]
     resource :llm_usage, only: :show
     resource :guides, only: :show
     get "bank_sync", to: redirect("/settings/providers", status: 301)

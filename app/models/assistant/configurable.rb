@@ -3,8 +3,9 @@ module Assistant::Configurable
 
   class_methods do
     def config_for(chat)
-      preferred_currency = Money::Currency.new(chat.user.family.currency)
-      preferred_date_format = chat.user.family.date_format
+      family = chat.user.family
+      preferred_currency = Money::Currency.new(family.currency)
+      preferred_date_format = family.date_format
 
       if chat.user.ui_layout_intro?
         {
@@ -12,11 +13,16 @@ module Assistant::Configurable
           functions: []
         }
       else
+        custom = family.custom_assistant_instructions.presence
         {
-          instructions: default_instructions(preferred_currency, preferred_date_format),
+          instructions: custom || default_instructions(preferred_currency, preferred_date_format),
           functions: default_functions
         }
       end
+    end
+
+    def default_instructions_for(family)
+      default_instructions(Money::Currency.new(family.currency), family.date_format)
     end
 
     private

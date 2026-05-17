@@ -61,6 +61,9 @@ class Provider::Openai::AutoCategorizer
   end
 
   def instructions
+    custom = family&.custom_auto_categorizer_instructions.presence
+    return custom if custom
+
     if custom_provider
       simple_instructions
     else
