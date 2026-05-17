@@ -36,15 +36,20 @@ class PowensAccount::ProcessorTest < ActiveSupport::TestCase
   end
 
   test "updates linked account balance and imports transactions with Powens metadata" do
-    assert_difference "@account.entries.count", 1 do
+    assert_equal "Depository", @account.accountable_type
+
+    assert_difference "@account.entries.count", 2 do
       PowensAccount::Processor.new(@powens_account).process
     end
 
-    entry = @account.entries.order(created_at: :desc).first
+    entry = @account.entries.find_by!(external_id: "powens_123", source: "powens")
+    current_anchor = @account.valuations.current_anchor.includes(:entry).first
 
     assert_equal BigDecimal("1234.56"), @account.reload.balance
     assert_equal BigDecimal("1234.56"), @account.cash_balance
     assert_equal "EUR", @account.currency
+    assert_equal Date.current, current_anchor.entry.date
+    assert_equal BigDecimal("1234.56"), current_anchor.entry.amount
     assert_equal "powens", entry.source
     assert_equal "powens_123", entry.external_id
     assert_equal BigDecimal("15.25"), entry.amount

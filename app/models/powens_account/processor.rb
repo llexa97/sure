@@ -1,4 +1,6 @@
 class PowensAccount::Processor
+  ProcessingError = Class.new(StandardError)
+
   attr_reader :powens_account, :skipped_entries
 
   def initialize(powens_account)
@@ -18,23 +20,18 @@ class PowensAccount::Processor
     def process_account!
       account = powens_account.current_account
       balance = powens_account.current_balance_for(account.accountable_type) || account.balance
+      currency = powens_account.currency || account.currency
+      cash_balance = account.accountable_type == "Investment" ? 0 : balance
 
-      if account.accountable_type == "Investment"
-        # For investment accounts, the provider balance is the total portfolio
-        # valuation. Cash inside the account is tracked separately (not surfaced
-        # by Powens here), so we keep cash_balance at zero and let the holdings
-        # carry the value.
-        account.update!(
-          balance: balance,
-          cash_balance: 0,
-          currency: powens_account.currency || account.currency
-        )
-      else
-        account.update!(
-          balance: balance,
-          cash_balance: balance,
-          currency: powens_account.currency || account.currency
-        )
+      update_current_balance!(account, balance: balance, cash_balance: cash_balance, currency: currency)
+    end
+
+    def update_current_balance!(account, balance:, cash_balance:, currency:)
+      ActiveRecord::Base.transaction do
+        account.update!(cash_balance: cash_balance, currency: currency)
+
+        result = Account::CurrentBalanceManager.new(account).set_current_balance(balance)
+        raise ProcessingError, "Failed to set current balance: #{result.error}" unless result.success?
       end
     end
 
