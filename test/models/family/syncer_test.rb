@@ -7,11 +7,18 @@ class Family::SyncerTest < ActiveSupport::TestCase
 
   test "syncs provider items and manual accounts" do
     family_sync = syncs(:family)
+    @family.gocardless_items.create!(
+      name: "GoCardless Bank",
+      institution_id: "REVOLUT_REVOGB21",
+      requisition_id: SecureRandom.uuid
+    )
+    @family.powens_items.create!(
+      name: "Powens Bank",
+      access_token: "powens-token",
+      reference: SecureRandom.uuid
+    )
 
     manual_accounts_count = @family.accounts.manual.count
-    plaid_items_count = @family.plaid_items.syncable.count
-    brex_items_count = @family.brex_items.syncable.count
-    binance_items_count = @family.binance_items.syncable.count
 
     syncer = Family::Syncer.new(@family)
 
@@ -20,24 +27,33 @@ class Family::SyncerTest < ActiveSupport::TestCase
            .with(parent_sync: family_sync, window_start_date: nil, window_end_date: nil)
            .times(manual_accounts_count)
 
-    PlaidItem.any_instance
-               .expects(:sync_later)
-               .with(parent_sync: family_sync, window_start_date: nil, window_end_date: nil)
-               .times(plaid_items_count)
+    Family::Syncer::SYNCABLE_ITEM_ASSOCIATIONS.each do |association|
+      item_class = @family.association(association).reflection.klass
+      items_count = @family.public_send(association).syncable.count
 
-    BrexItem.any_instance
-            .expects(:sync_later)
-            .with(parent_sync: family_sync, window_start_date: nil, window_end_date: nil)
-            .times(brex_items_count)
-
-    BinanceItem.any_instance
-               .expects(:sync_later)
-               .with(parent_sync: family_sync, window_start_date: nil, window_end_date: nil)
-               .times(binance_items_count)
+      item_class.any_instance
+                .expects(:sync_later)
+                .with(parent_sync: family_sync, window_start_date: nil, window_end_date: nil)
+                .times(items_count)
+    end
 
     syncer.perform_sync(family_sync)
 
     assert_equal "completed", family_sync.reload.status
+  end
+
+  test "includes every syncable provider item association" do
+    expected_associations = Family.reflect_on_all_associations(:has_many).filter_map do |association|
+      next unless association.name.to_s.end_with?("_items")
+      next unless association.klass.included_modules.include?(Syncable)
+      next unless association.klass.respond_to?(:syncable)
+
+      association.name
+    rescue NameError
+      nil
+    end
+
+    assert_equal expected_associations.sort, Family::Syncer::SYNCABLE_ITEM_ASSOCIATIONS.sort
   end
 
   test "only applies active rules during sync" do
@@ -66,15 +82,11 @@ class Family::SyncerTest < ActiveSupport::TestCase
     active_rule.expects(:apply_later).once
     disabled_rule.expects(:apply_later).never
 
-    # Mock the account and plaid item syncs to avoid side effects
+    # Mock account and provider item syncs to avoid side effects
     Account.any_instance.stubs(:sync_later)
-    PlaidItem.any_instance.stubs(:sync_later)
-    SimplefinItem.any_instance.stubs(:sync_later)
-    LunchflowItem.any_instance.stubs(:sync_later)
-    EnableBankingItem.any_instance.stubs(:sync_later)
-    SophtronItem.any_instance.stubs(:sync_later)
-    BrexItem.any_instance.stubs(:sync_later)
-    BinanceItem.any_instance.stubs(:sync_later)
+    Family::Syncer::SYNCABLE_ITEM_ASSOCIATIONS.each do |association|
+      @family.association(association).reflection.klass.any_instance.stubs(:sync_later)
+    end
 
     syncer.perform_sync(family_sync)
     syncer.perform_post_sync

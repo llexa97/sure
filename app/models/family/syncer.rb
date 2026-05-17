@@ -19,8 +19,12 @@ class Family::Syncer
     mercury_items
     brex_items
     binance_items
+    kraken_items
     snaptrade_items
+    ibkr_items
     sophtron_items
+    gocardless_items
+    powens_items
   ].freeze
 
   def initialize(family)

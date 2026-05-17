@@ -175,6 +175,15 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to account_url(@account)
   end
 
+  test "should sync all accounts" do
+    Family.any_instance.expects(:sync_later).once
+
+    post sync_all_accounts_url
+
+    assert_redirected_to accounts_path
+    assert_equal I18n.t("accounts.sync_all.syncing"), flash[:notice]
+  end
+
   test "should get sparkline" do
     get sparkline_account_url(@account)
     assert_response :success
