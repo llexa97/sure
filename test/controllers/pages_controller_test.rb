@@ -14,6 +14,23 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert_response :ok
   end
 
+  test "dashboard sidebar groups cash accounts by subtype" do
+    Rails.cache.clear
+    @family.accounts.create!(
+      owner: @user,
+      name: "Sidebar Savings",
+      balance: 100,
+      currency: @family.currency,
+      accountable: Depository.new(subtype: "savings")
+    )
+
+    get root_path
+
+    assert_response :ok
+    assert_select "[data-testid='account-subtype-group'][data-account-subtype='checking']"
+    assert_select "[data-testid='account-subtype-group'][data-account-subtype='savings']"
+  end
+
   test "intro page requires guest role" do
     get intro_path
 

@@ -1,6 +1,22 @@
 ---
 fr:
   depositories:
+    subtypes:
+      checking:
+        short: Courant
+        long: Compte courant
+      savings:
+        short: Épargne
+        long: Compte épargne
+      hsa:
+        short: HSA
+        long: Compte d'épargne santé
+      cd:
+        short: CD
+        long: Certificat de dépôt
+      money_market:
+        short: MM
+        long: Compte du marché monétaire
     edit:
       edit: Éditer %{account}
     form:
