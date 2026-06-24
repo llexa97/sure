@@ -160,7 +160,6 @@ Rails.application.routes.draw do
       post :new_connection
     end
   end
-
   resources :gocardless_items, only: [ :new, :create, :destroy ] do
     collection do
       get :callback
@@ -187,6 +186,10 @@ Rails.application.routes.draw do
       post :complete_account_setup
     end
   end
+
+  get ".well-known/oauth-protected-resource", to: "oauth_metadata#protected_resource"
+  get ".well-known/oauth-authorization-server", to: "oauth_metadata#authorization_server"
+  post "register", to: "oauth_registration#create"
   use_doorkeeper
   # MFA routes
   resource :mfa, controller: "mfa", only: [ :new, :create ] do
@@ -263,8 +266,9 @@ Rails.application.routes.draw do
 
   namespace :settings do
     resource :profile, only: [ :show, :destroy ]
-    resource :preferences, only: :show
+    resource :preferences, only: %i[show update]
     resource :appearance, only: %i[show update]
+    resource :debug, only: :show
     resource :hosting, only: %i[show update] do
       delete :clear_cache, on: :collection
       delete :disconnect_external_assistant, on: :collection
@@ -276,6 +280,9 @@ Rails.application.routes.draw do
     end
     resources :sso_identities, only: :destroy
     resource :api_key, only: [ :show, :new, :create, :destroy ]
+    resource :mcp, controller: "mcp", only: :show do
+      delete "tokens/:token_id", to: "mcp#revoke", as: :revoke_token
+    end
     resource :ai_prompts, only: [ :show, :update ]
     resource :llm_usage, only: :show
     resource :guides, only: :show
@@ -308,6 +315,8 @@ Rails.application.routes.draw do
   resources :categories, except: :show do
     resources :deletions, only: %i[new create], module: :category
 
+    get :merge, on: :collection
+    post :perform_merge, on: :collection
     post :bootstrap, on: :collection
     delete :destroy_all, on: :collection
   end
@@ -325,6 +334,22 @@ Rails.application.routes.draw do
     get :picker, on: :collection
 
     resources :budget_categories, only: %i[index show update]
+  end
+
+  resources :goals do
+    member do
+      patch :pause
+      patch :resume
+      patch :complete
+      patch :archive
+      patch :unarchive
+    end
+
+    resources :pledges, only: %i[new create destroy], controller: "goal_pledges" do
+      member do
+        patch :renew
+      end
+    end
   end
 
   resources :family_merchants, only: %i[index new create edit update destroy] do
@@ -406,6 +431,7 @@ Rails.application.routes.draw do
       post :merge_duplicate
       post :dismiss_duplicate
       post :unlock
+      patch :tags, action: :update_tags
     end
   end
 
@@ -522,7 +548,7 @@ Rails.application.routes.draw do
       resources :budgets, only: [ :index, :show ]
       resources :budget_categories, only: [ :index, :show ]
       resources :categories, only: [ :index, :show, :create ]
-      resources :merchants, only: [ :index, :show ]
+      resources :merchants, only: [ :index, :show, :create ]
       resources :rules, only: [ :index, :show ]
       resources :rule_runs, only: [ :index, :show ]
       resources :securities, only: [ :index, :show ]
@@ -542,6 +568,10 @@ Rails.application.routes.draw do
       resources :imports, only: [ :index, :show, :create ] do
         post :preflight, on: :collection
         get :rows, on: :member
+      end
+      resources :import_sessions, only: [ :show, :create ] do
+        post :chunks, on: :member, action: :create_chunk
+        post :publish, on: :member
       end
       resource :usage, only: [ :show ], controller: :usage
       resource :balance_sheet, only: [ :show ], controller: :balance_sheet
@@ -630,6 +660,38 @@ Rails.application.routes.draw do
     end
   end
 
+  resources :akahu_items, only: %i[index new create show edit update destroy] do
+    collection do
+      get :preload_accounts
+      get :select_accounts
+      post :link_accounts
+      get :select_existing_account
+      post :link_existing_account
+    end
+
+    member do
+      post :sync
+      get :setup_accounts
+      post :complete_account_setup
+    end
+  end
+
+  resources :up_items, only: %i[index new create show edit update destroy] do
+    collection do
+      get :preload_accounts
+      get :select_accounts
+      post :link_accounts
+      get :select_existing_account
+      post :link_existing_account
+    end
+
+    member do
+      post :sync
+      get :setup_accounts
+      post :complete_account_setup
+    end
+  end
+
   resources :sophtron_items, only: %i[index new create show edit update destroy] do
     collection do
       get :preload_accounts
@@ -667,8 +729,8 @@ Rails.application.routes.draw do
   get "up" => "rails/health#show", as: :rails_health_check
 
   # Render dynamic PWA files from app/views/pwa/*
-  get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
-  get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
+  get "service-worker" => "pwa#service_worker", as: :pwa_service_worker, defaults: { format: :js }
+  get "manifest" => "pwa#manifest", as: :pwa_manifest, defaults: { format: :json }
 
   get "imports/:import_id/upload/sample_csv", to: "import/uploads#sample_csv", as: :import_upload_sample_csv
 

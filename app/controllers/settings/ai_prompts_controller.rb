@@ -6,8 +6,8 @@ class Settings::AiPromptsController < ApplicationController
 
   def show
     @breadcrumbs = [
-      [ "Home", root_path ],
-      [ "AI Prompts", nil ]
+      [ t("breadcrumbs.home"), root_path ],
+      [ t("breadcrumbs.ai_prompts"), nil ]
     ]
     @default_assistant_instructions = Assistant::Builtin.default_instructions_for(@family)
     @default_auto_categorizer_instructions = Provider::Openai::AutoCategorizer

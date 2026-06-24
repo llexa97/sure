@@ -15,6 +15,8 @@ class AccountsController < ApplicationController
     @plaid_items = visible_provider_items(family.plaid_items.ordered.includes(:syncs, :plaid_accounts))
     @simplefin_items = visible_provider_items(family.simplefin_items.ordered.includes(:syncs))
     @lunchflow_items = visible_provider_items(family.lunchflow_items.ordered.includes(:syncs, :lunchflow_accounts))
+    @akahu_items = visible_provider_items(family.akahu_items.ordered.includes(:syncs, :akahu_accounts))
+    @up_items = visible_provider_items(family.up_items.ordered.includes(:syncs, :up_accounts))
     @enable_banking_items = visible_provider_items(family.enable_banking_items.ordered.includes(:syncs))
     @coinstats_items = visible_provider_items(family.coinstats_items.ordered.includes(:coinstats_accounts, :accounts, :syncs))
     @mercury_items = visible_provider_items(family.mercury_items.ordered.includes(:syncs, :mercury_accounts))
@@ -26,6 +28,7 @@ class AccountsController < ApplicationController
     @sophtron_items = visible_provider_items(family.sophtron_items.ordered.includes(:syncs, :sophtron_accounts))
     @gocardless_items = visible_provider_items(family.gocardless_items.active.ordered.includes(:syncs, :gocardless_accounts, :accounts))
     @powens_items = visible_provider_items(family.powens_items.active.ordered.includes(:syncs, :powens_accounts, :accounts))
+    @binance_items = visible_provider_items(family.binance_items.ordered.includes(:binance_accounts, :accounts, :syncs))
 
     # Build sync stats maps for all providers
     build_sync_stats_maps
@@ -327,6 +330,20 @@ class AccountsController < ApplicationController
         @lunchflow_sync_stats_map[item.id] = latest_sync&.sync_stats || {}
       end
 
+      # Akahu sync stats
+      @akahu_sync_stats_map = {}
+      @akahu_items.each do |item|
+        latest_sync = item.syncs.ordered.first
+        @akahu_sync_stats_map[item.id] = latest_sync&.sync_stats || {}
+      end
+
+      # Up sync stats
+      @up_sync_stats_map = {}
+      @up_items.each do |item|
+        latest_sync = item.syncs.ordered.first
+        @up_sync_stats_map[item.id] = latest_sync&.sync_stats || {}
+      end
+
       # Enable Banking sync stats
       @enable_banking_sync_stats_map = {}
       @enable_banking_latest_sync_error_map = {}
@@ -398,6 +415,21 @@ class AccountsController < ApplicationController
       @indexa_capital_items.each do |item|
         latest_sync = item.syncs.ordered.first
         @indexa_capital_sync_stats_map[item.id] = latest_sync&.sync_stats || {}
+      end
+
+      # Binance sync stats
+      @binance_sync_stats_map = {}
+      @binance_unlinked_count_map = {}
+      @binance_items.each do |item|
+        latest_sync = item.syncs.ordered.first
+        @binance_sync_stats_map[item.id] = latest_sync&.sync_stats || {}
+
+        # Count unlinked accounts
+        count = item.binance_accounts
+          .left_joins(:account_provider)
+          .where(account_providers: { id: nil })
+          .count
+        @binance_unlinked_count_map[item.id] = count
       end
     end
 end

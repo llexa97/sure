@@ -2,7 +2,10 @@ class Account < ApplicationRecord
   include AASM, Syncable, Monetizable, Chartable, Linkable, Enrichable, Anchorable, Reconcileable, TaxTreatable
 
   before_validation :assign_default_owner, if: -> { owner_id.blank? }
+
   before_destroy :capture_account_statement_ids_to_move
+  before_destroy :cleanup_transfers
+
   after_destroy_commit :move_account_statements_to_inbox
 
   validates :name, :balance, :currency, presence: true
@@ -22,6 +25,9 @@ class Account < ApplicationRecord
   has_many :holdings, dependent: :destroy
   has_many :balances, dependent: :destroy
   has_many :recurring_transactions, dependent: :destroy
+  has_many :goal_accounts, dependent: :destroy
+  has_many :goals, through: :goal_accounts
+  has_many :goal_pledges, dependent: :destroy
   # Inverse for recurring transfers where this account is the destination.
   # Account#recurring_transactions only matches account_id; without this
   # association, destroying the destination account would hit the FK
@@ -35,7 +41,11 @@ class Account < ApplicationRecord
 
   enum :classification, { asset: "asset", liability: "liability" }, validate: { allow_nil: true }
 
-  scope :visible, -> { where(status: [ "draft", "active" ]) }
+  VISIBLE_STATUSES = %w[draft active].freeze
+  HISTORICAL_STATUSES = (VISIBLE_STATUSES + %w[disabled]).freeze
+
+  scope :visible, -> { where(status: VISIBLE_STATUSES) }
+  scope :historical, -> { where(status: HISTORICAL_STATUSES) }
   scope :assets, -> { where(classification: "asset") }
   scope :liabilities, -> { where(classification: "liability") }
   scope :alphabetically, -> { order(:name) }
@@ -85,9 +95,18 @@ class Account < ApplicationRecord
   delegated_type :accountable, types: Accountable::TYPES, dependent: :destroy
   delegate :subtype, to: :accountable, allow_nil: true
 
-  # Writer for subtype that delegates to the accountable
-  # This allows forms to set subtype directly on the account
+  # Writer for subtype that delegates to the accountable.
+  # This allows forms to set subtype directly on the account.
+  #
+  # On create the accountable may not be built yet: mass-assignment can apply
+  # `subtype` before `accountable_attributes` (which is what builds the
+  # accountable via accepts_nested_attributes_for). With no accountable in place
+  # `accountable&.subtype = value` is a silent no-op and the chosen subtype is
+  # dropped. Build the accountable from the delegated type first so the value is
+  # preserved; the later `accountable_attributes` assignment (update_only) then
+  # updates this same record instead of building a new one.
   def subtype=(value)
+    self.accountable = accountable_class.new if accountable.nil? && accountable_type.present?
     accountable&.subtype = value
   end
 
@@ -260,7 +279,9 @@ class Account < ApplicationRecord
     end
 
     def create_from_binance_account(binance_account)
-      create_from_crypto_exchange_account(binance_account, family: binance_account.binance_item.family)
+      account = create_from_crypto_exchange_account(binance_account, family: binance_account.binance_item.family)
+      account.set_opening_anchor_balance(balance: 0)
+      account
     end
 
     def create_from_ibkr_account(ibkr_account)
@@ -283,6 +304,7 @@ class Account < ApplicationRecord
         }
       }
 
+      # Capture the created account in a variable
       create_and_sync(attributes, skip_initial_sync: true)
     end
 
@@ -341,9 +363,24 @@ class Account < ApplicationRecord
   def manual_crypto_exchange?
     accountable_type == "Crypto" &&
       accountable&.subtype == "exchange" &&
-      account_providers.none? &&
+      manual?
+  end
+
+  # True when the account has no live sync provider attached. Mirrors the
+  # `Account.manual` scope so per-instance checks don't drift from the query.
+  def manual?
+    account_providers.none? &&
       plaid_account_id.blank? &&
       simplefin_account_id.blank?
+  end
+
+  # Default GoalPledge kind for this account. Manual accounts get
+  # `manual_save` (resolves on the next valuation), live-synced accounts
+  # get `transfer` (resolves when the synced deposit posts). Keeps the
+  # decision in one place so the new-pledge controller / preview helper
+  # can't disagree on what they're going to save.
+  def default_pledge_kind
+    manual? ? "manual_save" : "transfer"
   end
 
   def logo_url
@@ -542,5 +579,13 @@ class Account < ApplicationRecord
         match_confidence: nil,
         updated_at: Time.current
       )
+    end
+
+    def cleanup_transfers
+      transaction_ids = entries.where(entryable_type: "Transaction").pluck(:entryable_id)
+
+      transfers = Transfer.where(inflow_transaction_id: transaction_ids).or(Transfer.where(outflow_transaction_id: transaction_ids))
+
+      transfers.find_each(&:destroy!)
     end
 end

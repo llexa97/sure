@@ -41,6 +41,42 @@ class ReportsControllerTest < ActionDispatch::IntegrationTest
   test "index with last 6 months period" do
     get reports_path(period_type: :last_6_months)
     assert_response :ok
+
+    expected_end   = Date.current.end_of_month
+    expected_start = (expected_end + 1.day - 6.months).beginning_of_month
+
+    # Should show exactly 6 months, not 7
+    assert_equal 6, (expected_end.year * 12 + expected_end.month) - (expected_start.year * 12 + expected_start.month) + 1
+
+    # Page should include both boundary months
+    assert_includes @response.body, expected_start.strftime("%b %Y")
+    assert_includes @response.body, expected_end.strftime("%b %Y")
+
+    # Page should NOT include the months immediately outside the window
+    prev_month = expected_start - 1.month
+    next_month = expected_end + 1.month
+    assert_not_includes @response.body, prev_month.strftime("%b %Y")
+    assert_not_includes @response.body, next_month.strftime("%b %Y")
+  end
+
+  test "last 6 months default start date is consistent with navigation" do
+    # First load (no params) should produce the same start/end as the navigation arrows would
+    get reports_path(period_type: :last_6_months)
+    assert_response :ok
+
+    expected_end   = Date.current.end_of_month
+    expected_start = (expected_end + 1.day - 6.months).beginning_of_month
+
+    # Navigate forward from one window back — should land on the same default window
+    prev_start = expected_start - 6.months
+    prev_end   = prev_start + 6.months - 1.day
+
+    get reports_path(period_type: :last_6_months, start_date: prev_start, end_date: prev_end)
+    assert_response :ok
+
+    # The next-window link should point to the same dates as the default
+    assert_select "a[href=?]",
+      reports_path(period_type: :last_6_months, start_date: expected_start, end_date: expected_end)
   end
 
   test "index shows empty state when no transactions" do
@@ -157,6 +193,40 @@ class ReportsControllerTest < ActionDispatch::IntegrationTest
     assert_select ".text-center.py-8.text-subdued", { text: /No spending data/, count: 0 }, "Should not show 'No spending data' message when transactions exist"
   end
 
+  test "index avoids residual category lazy loads" do
+    account = accounts(:depository)
+
+    4.times do |idx|
+      parent = @family.categories.create!(
+        name: "Reports Parent #{idx}",
+        color: "#000000",
+        lucide_icon: "folder"
+      )
+      child = @family.categories.create!(
+        name: "Reports Child #{idx}",
+        color: "#111111",
+        lucide_icon: "folder",
+        parent: parent
+      )
+      entry = account.entries.create!(
+        name: "Reports transaction #{idx}",
+        date: Date.current,
+        amount: 10 + idx,
+        currency: "USD",
+        entryable: Transaction.new(
+          category: child,
+          kind: "standard"
+        )
+      )
+      assert entry.persisted?
+    end
+
+    queries = capture_sql_queries { get reports_path(period_type: :monthly) }
+
+    assert_response :ok
+    assert_empty queries.grep(/SELECT "categories"\.\* FROM "categories" WHERE "categories"\."id" = \$1 LIMIT \$2/)
+  end
+
   test "export transactions with API key authentication" do
     # Use an active API key with read permissions
     api_key = api_keys(:active_key)
@@ -175,6 +245,79 @@ class ReportsControllerTest < ActionDispatch::IntegrationTest
     assert_response :ok
     assert_equal "text/csv", @response.media_type
     assert_match /Category/, @response.body
+  end
+
+  test "export transactions with API key does not inherit web session impersonation" do
+    support_user = users(:sure_support_staff)
+    support_user.api_keys.active.destroy_all
+    token_value = ApiKey.generate_secure_key
+    export_credential = support_user.api_keys.build(
+      name: "Support Export Credential",
+      scopes: [ "read" ],
+      source: "web"
+    )
+    export_credential.key = token_value
+    export_credential.save!
+
+    impersonation_session = impersonation_sessions(:in_progress)
+    impersonated_user = impersonation_session.impersonated
+    leaked_category = impersonated_user.family.categories.create!(
+      name: "Impersonated Export Leak Probe"
+    )
+    impersonated_account = impersonated_user.finance_accounts.first
+    assert_not_nil impersonated_account, "Test setup failed: impersonated user has no finance account"
+
+    create_transaction(
+      account: impersonated_account,
+      name: "Impersonated export leak probe",
+      date: Date.current,
+      amount: 123.45,
+      category: leaked_category
+    )
+
+    support_user.sessions.destroy_all
+    support_user.sessions.create!(
+      user_agent: "Browser session",
+      ip_address: "127.0.0.1",
+      active_impersonator_session: impersonation_session
+    )
+
+    get export_transactions_reports_path(
+      format: :csv,
+      period_type: :ytd,
+      start_date: Date.current.beginning_of_year,
+      end_date: Date.current,
+      api_key: token_value
+    )
+
+    assert_response :ok
+    assert_equal "text/csv", @response.media_type
+    assert_no_match /Impersonated Export Leak Probe/, @response.body
+  end
+
+  test "export transactions with API key rejects deactivated user" do
+    user = users(:family_admin)
+    user.api_keys.active.destroy_all
+    token_value = ApiKey.generate_secure_key
+    export_access = user.api_keys.build(
+      name: "Inactive User Export Credential",
+      scopes: [ "read" ],
+      source: "web"
+    )
+    export_access.key = token_value
+    export_access.save!
+    user.update_column(:active, false)
+
+    get export_transactions_reports_path(
+      format: :csv,
+      period_type: :ytd,
+      api_key: token_value
+    )
+
+    assert_response :unauthorized
+    assert_match /Invalid or expired API key/, @response.body
+  ensure
+    user&.update_column(:active, true)
   end
 
   test "export transactions with invalid API key" do

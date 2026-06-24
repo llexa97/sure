@@ -31,27 +31,24 @@ class Budget < ApplicationRecord
     end
 
     def budget_date_valid?(date, family:)
-      budget_start = if family.uses_custom_month_start?
-        family.custom_month_start_for(date)
-      else
-        date.beginning_of_month
-      end
-
+      budget_start, _ = period_for(date, family: family)
       budget_start >= oldest_valid_budget_date(family) &&
         budget_start <= latest_valid_budget_start_date(family)
+    end
+
+    def period_for(date, family:)
+      if family.uses_custom_month_start?
+        [ family.custom_month_start_for(date), family.custom_month_end_for(date) ]
+      else
+        [ date.beginning_of_month, date.end_of_month ]
+      end
     end
 
     def find_or_bootstrap(family, start_date:, user: nil)
       return nil unless budget_date_valid?(start_date, family: family)
 
       Budget.transaction do
-        if family.uses_custom_month_start?
-          budget_start = family.custom_month_start_for(start_date)
-          budget_end = family.custom_month_end_for(start_date)
-        else
-          budget_start = start_date.beginning_of_month
-          budget_end = start_date.end_of_month
-        end
+        budget_start, budget_end = period_for(start_date, family: family)
 
         budget = Budget.find_or_create_by!(
           family: family,
@@ -93,7 +90,9 @@ class Budget < ApplicationRecord
   end
 
   def sync_budget_categories
-    current_category_ids = family.categories.pluck(:id).to_set
+    # Category changes can leave the association memoized before this sync runs.
+    current_categories_by_id = family.categories.reload.index_by(&:id)
+    current_category_ids = current_categories_by_id.keys.to_set
     existing_budget_category_ids = budget_categories.pluck(:category_id).to_set
     categories_to_add = current_category_ids - existing_budget_category_ids
     categories_to_remove = existing_budget_category_ids - current_category_ids
@@ -101,7 +100,7 @@ class Budget < ApplicationRecord
     # Create missing categories
     categories_to_add.each do |category_id|
       budget_categories.create!(
-        category_id: category_id,
+        category: current_categories_by_id.fetch(category_id),
         budgeted_spending: 0,
         currency: family.currency
       )
@@ -130,11 +129,11 @@ class Budget < ApplicationRecord
     if family.uses_custom_month_start?
       I18n.t(
         "budgets.name.custom_range",
-        start: start_date.strftime("%b %d"),
-        end_date: end_date.strftime("%b %d, %Y")
+        start: I18n.l(start_date, format: :short),
+        end_date: I18n.l(end_date, format: :long)
       )
     else
-      I18n.t("budgets.name.month_year", month: start_date.strftime("%B %Y"))
+      I18n.t("budgets.name.month_year", month: I18n.l(start_date, format: :month_year))
     end
   end
 

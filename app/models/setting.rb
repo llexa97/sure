@@ -10,6 +10,10 @@ class Setting < RailsSettings::Base
   field :openai_uri_base, type: :string, default: ENV["OPENAI_URI_BASE"]
   field :openai_model, type: :string, default: ENV["OPENAI_MODEL"]
   field :openai_json_mode, type: :string, default: ENV["LLM_JSON_MODE"]
+  field :anthropic_access_token, type: :string, default: ENV["ANTHROPIC_ACCESS_TOKEN"].presence || ENV["ANTHROPIC_API_KEY"].presence
+  field :anthropic_model, type: :string, default: ENV["ANTHROPIC_MODEL"]
+  field :anthropic_base_url, type: :string, default: ENV["ANTHROPIC_BASE_URL"]
+  field :llm_provider, type: :string, default: ENV.fetch("LLM_PROVIDER", "openai")
 
   # LLM token budget (applies to every outbound LLM call: chat, auto-categorize,
   # merchant detection, enhance-merchants, PDF processing). Defaults track
@@ -55,6 +59,7 @@ class Setting < RailsSettings::Base
   field :tiingo_api_key, type: :string, default: ENV["TIINGO_API_KEY"]
   field :eodhd_api_key, type: :string, default: ENV["EODHD_API_KEY"]
   field :alpha_vantage_api_key, type: :string, default: ENV["ALPHA_VANTAGE_API_KEY"]
+  field :tinkoff_invest_api_key, type: :string, default: ENV["TINKOFF_INVEST_API_KEY"]
 
   # Transparent encryption for API key fields.  The `field` macro defines the
   # raw getter/setter on the class.  By prepending this module we intercept
@@ -69,7 +74,9 @@ class Setting < RailsSettings::Base
       tiingo_api_key
       eodhd_api_key
       alpha_vantage_api_key
+      tinkoff_invest_api_key
       openai_access_token
+      anthropic_access_token
       external_assistant_token
     ].freeze
 
