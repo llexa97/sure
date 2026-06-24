@@ -51,10 +51,12 @@ class User < ApplicationRecord
   validates :password, length: { minimum: 8 }, allow_nil: true
   normalizes :email, with: ->(email) { email.strip.downcase }
   normalizes :unconfirmed_email, with: ->(email) { email&.strip&.downcase }
+  normalizes :locale, with: ->(locale) { locale.presence }
 
   normalizes :first_name, :last_name, with: ->(value) { value.strip.presence }
 
   enum :role, { guest: "guest", member: "member", admin: "admin", super_admin: "super_admin" }, validate: true
+  attribute :ui_layout, :string
   enum :ui_layout, { dashboard: "dashboard", intro: "intro" }, validate: true, prefix: true
 
   before_validation :apply_ui_layout_defaults
@@ -156,8 +158,16 @@ class User < ApplicationRecord
     when "external"
       Assistant::External.available_for?(self)
     else
-      ENV["OPENAI_ACCESS_TOKEN"].present? || Setting.openai_access_token.present?
+      openai_configured? || anthropic_configured?
     end
+  end
+
+  def openai_configured?
+    Provider::Openai.configured?
+  end
+
+  def anthropic_configured?
+    Provider::Anthropic.configured?
   end
 
   def ai_enabled?
@@ -304,6 +314,16 @@ class User < ApplicationRecord
     preferences&.[]("section_order") || default_dashboard_section_order
   end
 
+  # Per-widget height preset override ("compact" | "auto" | "tall"); nil = use default.
+  def dashboard_section_height(section_key)
+    preferences&.dig("dashboard_section_layout", section_key, "height")
+  end
+
+  # Per-widget column-span override ("single" | "full"); nil = use default.
+  def dashboard_section_width(section_key)
+    preferences&.dig("dashboard_section_layout", section_key, "col_span")
+  end
+
   def update_dashboard_preferences(prefs)
     # Use pessimistic locking to ensure atomic read-modify-write
     # This prevents race conditions when multiple sections are collapsed quickly
@@ -314,7 +334,9 @@ class User < ApplicationRecord
       prefs.each do |key, value|
         if value.is_a?(Hash)
           updated_prefs[key] ||= {}
-          updated_prefs[key] = updated_prefs[key].merge(value)
+          # deep_merge so a partial update of one nested dimension (e.g. a widget's
+          # col_span) doesn't clobber a sibling dimension (e.g. its height).
+          updated_prefs[key] = updated_prefs[key].deep_merge(value)
         else
           updated_prefs[key] = value
         end
@@ -363,6 +385,10 @@ class User < ApplicationRecord
 
   def dashboard_two_column?
     preferences&.dig("dashboard_two_column") == true
+  end
+
+  def preview_features_enabled?
+    preferences&.dig("preview_features_enabled") == true
   end
 
   def update_transactions_preferences(prefs)

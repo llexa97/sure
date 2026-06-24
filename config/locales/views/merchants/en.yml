@@ -16,6 +16,7 @@ en:
     index:
       empty: No merchants yet
       new: New merchant
+      import: Import merchants
       merge: Merge merchants
       title: Merchants
       family_title: "%{moniker} merchants"
@@ -34,6 +35,9 @@ en:
         merchant: Merchant
         actions: Actions
         source: Source
+    family_merchant:
+      edit: Edit
+      delete: Delete
     merchant:
       confirm_accept: Delete merchant
       confirm_body: Are you sure you want to delete this merchant? Removing this merchant

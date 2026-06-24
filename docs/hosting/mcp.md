@@ -230,8 +230,9 @@ Pipelock provides:
 - **Prompt injection detection**: Identifies attempts to manipulate the AI
 - **Tool poisoning detection**: Prevents malicious tool call sequences
 - **Policy enforcement**: Block or warn on suspicious patterns
+- **Signed receipts**: Produces verifiable evidence for mediated MCP decisions when the flight recorder is configured with storage and a signing key
 
-See the [Pipelock documentation](pipelock.md) and the example configuration in `compose.example.pipelock.yml` for setup instructions.
+See the [Pipelock documentation](pipelock.md) and the example configuration in `compose.example.ai.yml` for setup instructions.
 
 ### Network Security
 

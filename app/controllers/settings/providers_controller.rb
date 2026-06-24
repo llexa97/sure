@@ -5,8 +5,8 @@ class Settings::ProvidersController < ApplicationController
 
   def show
     @breadcrumbs = [
-      [ "Home", root_path ],
-      [ "Bank sync", nil ]
+      [ t("breadcrumbs.home"), root_path ],
+      [ t("breadcrumbs.bank_sync"), nil ]
     ]
 
     prepare_show_context
@@ -66,9 +66,9 @@ class Settings::ProvidersController < ApplicationController
       # Reload provider configurations if needed
       reload_provider_configs(updated_fields)
 
-      redirect_to settings_providers_path, notice: "Provider settings updated successfully"
+      redirect_to settings_providers_path, notice: t(".updated_successfully")
     else
-      redirect_to settings_providers_path, notice: "No changes were made"
+      redirect_to settings_providers_path, notice: t(".no_changes")
     end
   rescue => error
     Rails.logger.error("Failed to update provider settings: #{error.class} - #{error.message}")
@@ -182,6 +182,8 @@ class Settings::ProvidersController < ApplicationController
     # status display, and sync actions. The configuration registry excludes
     # them (see prepare_show_context).
     FAMILY_PANELS = [
+      { key: "akahu",          title: "Akahu",           turbo_id: "akahu",          partial: "akahu_panel" },
+      { key: "up",             title: "Up",              turbo_id: "up",             partial: "up_panel" },
       { key: "lunchflow",      title: "Lunch Flow",      turbo_id: "lunchflow",      partial: "lunchflow_panel" },
       { key: "simplefin",      title: "SimpleFIN",       turbo_id: "simplefin",      partial: "simplefin_panel" },
       { key: "enable_banking", title: "Enable Banking",  turbo_id: "enable_banking", partial: "enable_banking_panel" },
@@ -201,6 +203,8 @@ class Settings::ProvidersController < ApplicationController
 
     # Maps panel key → ActiveRecord model name for sync health queries
     PANEL_SYNCABLE_TYPES = {
+      "akahu"          => "AkahuItem",
+      "up"             => "UpItem",
       "simplefin"      => "SimplefinItem",
       "lunchflow"      => "LunchflowItem",
       "enable_banking" => "EnableBankingItem",
@@ -218,6 +222,10 @@ class Settings::ProvidersController < ApplicationController
 
     def load_provider_items(provider_key)
       case provider_key
+      when "akahu"
+        @akahu_items = Current.family.akahu_items.active.ordered
+      when "up"
+        @up_items = Current.family.up_items.active.ordered
       when "simplefin"
         @simplefin_items = Current.family.simplefin_items.ordered
       when "lunchflow"
@@ -255,6 +263,8 @@ class Settings::ProvidersController < ApplicationController
         FAMILY_PANEL_KEYS.any? { |key| config.provider_key.to_s.casecmp(key).zero? }
       end
 
+      @akahu_items = Current.family.akahu_items.active.ordered
+      @up_items = Current.family.up_items.active.ordered
       # Providers page only needs to know whether any SimpleFin/Lunchflow connections exist with valid credentials
       @simplefin_items = Current.family.simplefin_items.where.not(access_url: [ nil, "" ]).ordered.select(:id)
       @lunchflow_items = Current.family.lunchflow_items.where.not(api_key: [ nil, "" ]).ordered.select(:id)
@@ -287,6 +297,8 @@ class Settings::ProvidersController < ApplicationController
     # on instance_variable_get for control flow.
     def family_panel_items
       {
+        "akahu"          => @akahu_items,
+        "up"             => @up_items,
         "simplefin"      => @simplefin_items,
         "lunchflow"      => @lunchflow_items,
         "enable_banking" => @enable_banking_items,

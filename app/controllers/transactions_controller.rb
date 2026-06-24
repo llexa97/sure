@@ -2,15 +2,14 @@ class TransactionsController < ApplicationController
   include EntryableResource
 
   before_action :set_entry_for_unlock, only: :unlock
+  before_action :set_entry_for_tags, only: :update_tags
   before_action :store_params!, only: :index
 
   def new
     prefill_params_from_duplicate!
     super
     apply_duplicate_attributes!
-    @income_categories = Current.family.categories.incomes.alphabetically
-    @expense_categories = Current.family.categories.expenses.alphabetically
-    @categories = Current.family.categories.alphabetically
+    set_new_transaction_form_options
   end
 
   def index
@@ -63,6 +62,8 @@ class TransactionsController < ApplicationController
                                          10.days.from_now.to_date,
                                          Date.current)
                                   .includes(:merchant)
+
+    @breadcrumbs = [ [ t("breadcrumbs.home"), root_path ], [ t("breadcrumbs.transactions"), nil ] ]
   end
 
   def clear_filter
@@ -107,13 +108,14 @@ class TransactionsController < ApplicationController
       @entry.mark_user_modified!
       @entry.transaction.lock_attr!(:tag_ids) if @entry.transaction.tags.any?
 
-      flash[:notice] = "Transaction created"
+      flash[:notice] = t(".created")
 
       respond_to do |format|
         format.html { redirect_back_or_to account_path(@entry.account) }
         format.turbo_stream { stream_redirect_back_or_to(account_path(@entry.account)) }
       end
     else
+      set_new_transaction_form_options
       render :new, status: :unprocessable_entity
     end
   end
@@ -141,7 +143,7 @@ class TransactionsController < ApplicationController
       @entry.reload
 
       respond_to do |format|
-        format.html { redirect_back_or_to account_path(@entry.account), notice: "Transaction updated" }
+        format.html { redirect_back_or_to account_path(@entry.account), notice: t(".updated") }
         format.turbo_stream do
           in_split_group = helpers.in_split_group?(@entry, params[:grouped])
           render turbo_stream: [
@@ -172,6 +174,20 @@ class TransactionsController < ApplicationController
     else
       render :show, status: :unprocessable_entity
     end
+  end
+
+  def update_tags
+    return unless require_account_permission!(@entry.account, :annotate, redirect_path: transaction_path(@entry))
+
+    tag_ids = Current.family.tags.where(id: tag_ids_param).pluck(:id)
+
+    @entry.transaction.tag_ids = tag_ids
+    @entry.lock_saved_attributes!
+    @entry.mark_user_modified!
+    @entry.transaction.lock_attr!(:tag_ids)
+    @entry.sync_account_later
+
+    render json: { tag_ids: @entry.transaction.tag_ids }
   end
 
   def merge_duplicate
@@ -462,6 +478,29 @@ class TransactionsController < ApplicationController
       end
 
       entry_params
+    end
+
+    def tag_ids_param
+      Array(params[:tag_ids]).reject(&:blank?)
+    end
+
+    def set_entry_for_tags
+      set_entry
+    end
+
+    def set_new_transaction_form_options
+      accessible_accounts_scope = accessible_accounts
+
+      @account_currencies = accessible_accounts_scope.pluck(:id, :currency).to_h
+      @manual_accounts = accessible_accounts_scope
+        .manual
+        .active
+        .alphabetically
+        .includes(:account_providers, logo_attachment: :blob)
+        .to_a
+      @categories = Current.family.categories.alphabetically.to_a
+      @merchants = Current.family.available_merchants_for(Current.user).alphabetically.to_a
+      @tags = Current.family.tags.alphabetically.to_a
     end
 
     # Filters entry_params based on the user's permission on the account.
