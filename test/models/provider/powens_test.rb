@@ -58,6 +58,23 @@ class Provider::PowensTest < ActiveSupport::TestCase
     assert_equal 42, result[:id_user]
   end
 
+  test "targets a failing source when building a reconnect URL" do
+    url = @provider.reconnect_webview_url(
+      redirect_uri: "https://sure.test/powens_items/callback",
+      code: "tmp-code",
+      connection_id: "27",
+      state: "state-123",
+      lang: "fr",
+      reset_credentials: true,
+      connection_sources: [ "directaccess" ]
+    )
+
+    params = Rack::Utils.parse_query(URI.parse(url).query)
+
+    assert_equal "true", params["reset_credentials"]
+    assert_equal "directaccess", params["connection_sources"]
+  end
+
   test "lists account transactions with pagination" do
     first_page = {
       transactions: [

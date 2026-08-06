@@ -69,7 +69,7 @@ class Provider::Powens < Provider
     request(:delete, "#{base_url}/auth/token", access_token: access_token)
   end
 
-  def get_connection(access_token, connection_id, expand: "accounts,connector")
+  def get_connection(access_token, connection_id, expand: "accounts,connector,sources")
     request(
       :get,
       "#{base_url}/users/me/connections/#{connection_id}",
@@ -156,14 +156,18 @@ class Provider::Powens < Provider
     )
   end
 
-  def reconnect_webview_url(redirect_uri:, code:, connection_id:, state:, lang: I18n.locale)
+  def reconnect_webview_url(redirect_uri:, code:, connection_id:, state:, lang: I18n.locale, reset_credentials: nil, connection_sources: nil)
+    source_names = Array(connection_sources).map(&:to_s).reject(&:blank?)
+
     webview_url(
       "reconnect",
       redirect_uri: redirect_uri,
       code: code,
       connection_id: connection_id,
       state: state,
-      lang: lang
+      lang: lang,
+      reset_credentials: reset_credentials,
+      connection_sources: source_names.any? ? source_names.join(",") : nil
     )
   end
 
