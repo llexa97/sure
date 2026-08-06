@@ -48,6 +48,8 @@ class PowensItemsController < ApplicationController
 
     result = item.import_latest_powens_data(wait_for_source_refresh: item.requires_update?)
     if result[:success]
+      item.process_accounts
+      item.schedule_account_syncs
       redirect_to setup_accounts_powens_item_path(item), notice: "Powens connection linked. Select accounts to import."
     else
       redirect_to accounts_path, alert: result[:error]
