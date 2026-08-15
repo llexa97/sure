@@ -6,6 +6,14 @@ en:
     account:
       activity_feed:
         toggle_selection_checkboxes: Toggle selection
+      pending_balance_summary:
+        title: Balance with pending transactions
+        bank_balance_note: The main balance remains the balance reported by the bank.
+        balance_effect: Pending impact on balance
+        estimated_balance: Estimated balance after pending transactions
+        pending_count:
+          one: "%{count} pending transaction"
+          other: "%{count} pending transactions"
       balance_reconciliation:
         labels:
           adjustments: Adjustments

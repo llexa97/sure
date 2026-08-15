@@ -1,0 +1,32 @@
+<%= render DS::Card.new(class: "gap-4", data: { testid: "pending-balance-summary" }) do %>
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div class="flex min-w-0 items-center gap-3">
+      <div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-warning/10">
+        <%= helpers.icon("clock", color: "warning") %>
+      </div>
+
+      <div class="min-w-0">
+        <h3 class="font-medium text-primary"><%= t("UI.account.pending_balance_summary.title") %></h3>
+        <p class="text-sm text-secondary"><%= t("UI.account.pending_balance_summary.bank_balance_note") %></p>
+      </div>
+    </div>
+
+    <%= render DS::Pill.new(label: pending_count_label, tone: :warning, marker: false, show_dot: true) %>
+  </div>
+
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    <div>
+      <p class="text-xs text-secondary"><%= t("UI.account.pending_balance_summary.balance_effect") %></p>
+      <p class="privacy-sensitive tabular-nums text-xl font-medium <%= effect_text_class %>" data-testid="pending-balance-effect">
+        <%= balance_effect_display %>
+      </p>
+    </div>
+
+    <div class="sm:border-l sm:border-secondary sm:pl-4">
+      <p class="text-xs text-secondary"><%= t("UI.account.pending_balance_summary.estimated_balance") %></p>
+      <p class="privacy-sensitive tabular-nums text-xl font-medium text-primary" data-testid="estimated-balance-after-pending">
+        <%= estimated_balance_money.format %>
+      </p>
+    </div>
+  </div>
+<% end %>

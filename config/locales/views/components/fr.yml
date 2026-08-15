@@ -7,6 +7,14 @@ fr:
         no_balance_data: Aucune donnée de solde disponible pour cette date
       activity_feed:
         toggle_selection_checkboxes: Basculer la sélection
+      pending_balance_summary:
+        title: Solde avec les opérations en attente
+        bank_balance_note: Le solde principal reste celui transmis par la banque.
+        balance_effect: Impact des opérations en attente
+        estimated_balance: Solde estimé après les opérations
+        pending_count:
+          one: "%{count} opération en attente"
+          other: "%{count} opérations en attente"
       balance_reconciliation:
         labels:
           adjustments: Ajustements
