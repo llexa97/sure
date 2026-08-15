@@ -19,8 +19,9 @@ fr:
         total: Total des dépenses nettes
         without_subcategory: Sans sous-catégorie
       chart:
+        account: Compte courant
         annual_net: "Solde annuel : %{amount}"
-        aria_label: Graphique annuel comparant les revenus et les dépenses des comptes courants en %{year}
+        aria_label: Graphique annuel des revenus et des dépenses en %{year}, chaque barre étant répartie par compte courant
         day_range: "%{from}–%{to}"
         description:
           one: Total mensuel de votre compte courant, hors virements internes et opérations en attente.
@@ -28,13 +29,17 @@ fr:
         empty_description: Aucun flux confirmé n’est disponible sur les comptes courants pour cette année.
         empty_title: Aucun flux à afficher
         expense: Dépenses
+        expense_position: Dépenses · barre droite
+        expense_share: Part des dépenses
         included_accounts: Comptes courants inclus
         income: Revenus
+        income_position: Revenus · barre gauche
+        income_share: Part des revenus
         next_year: Année suivante
         partial_period: Données arrêtées au %{date} pour la période en cours.
         period: Période
         previous_year: Année précédente
-        table_caption: Valeurs mensuelles des revenus et des dépenses pour %{year}
+        table_caption: Valeurs mensuelles et proportions des revenus et des dépenses par compte courant pour %{year}
         title: Revenus et dépenses annuels
       accounts:
         account: Compte courant

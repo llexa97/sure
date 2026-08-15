@@ -119,6 +119,28 @@ class IncomeStatement
     totals(transactions_scope: scope, date_range: period.date_range)
   end
 
+  # Monthly income/expense totals grouped by account in one query. This keeps
+  # stacked annual charts from issuing one totals query per month and account.
+  def monthly_totals_by_account(period:, account_ids:)
+    account_ids = Array(account_ids).compact.map(&:to_s).uniq
+    return [] if account_ids.empty?
+
+    account_month_totals_query(period, account_ids)
+      .group_by { |row| [ row.period_start, row.account_id ] }
+      .map do |(period_start, account_id), rows|
+        income = rows.select { |row| row.classification == "income" }.sum(&:total)
+        expense = rows.select { |row| row.classification == "expense" }.sum(&:total)
+
+        AccountMonthTotal.new(
+          period_start: period_start,
+          account_id: account_id,
+          income_money: Money.new(income, family.currency),
+          expense_money: Money.new(expense, family.currency)
+        )
+      end
+      .sort_by { |total| [ total.period_start, total.account_id ] }
+  end
+
   # Accounts actually reflected in totals/totals_for: visible, not excluded
   # from reports, not tax-advantaged, and (when scoped to a user) included in
   # that user's finances. Callers offering an account filter (e.g. a
@@ -157,6 +179,7 @@ class IncomeStatement
 
   private
     ScopeTotals = Data.define(:transactions_count, :income_money, :expense_money)
+    AccountMonthTotal = Data.define(:period_start, :account_id, :income_money, :expense_money)
     PeriodTotal = Data.define(:classification, :total, :currency, :category_totals)
     CategoryTotal = Data.define(:category, :total, :currency, :weight)
     NetCategoryTotals = Data.define(:net_expense_categories, :net_income_categories, :total_net_expense, :total_net_income, :currency)
@@ -252,6 +275,26 @@ class IncomeStatement
       Rails.cache.fetch([
         "income_statement", "totals_query", "v2", family.id, user&.id, included_account_ids_hash, sql_hash, date_range.begin, date_range.end, family.entries_cache_version, family.accounts.maximum(:updated_at)&.to_i
       ]) { Totals.new(family, transactions_scope: transactions_scope, date_range: date_range, included_account_ids: included_account_ids).call }
+    end
+
+    def account_month_totals_query(period, account_ids)
+      transactions_scope = family.transactions.visible.excluding_pending.in_period(period)
+      sql_hash = Digest::MD5.hexdigest(transactions_scope.to_sql)
+      account_ids_hash = Digest::MD5.hexdigest(account_ids.sort.join(","))
+
+      Rails.cache.fetch([
+        "income_statement", "account_month_totals", "v1", family.id, user&.id,
+        included_account_ids_hash, account_ids_hash, sql_hash,
+        period.start_date, period.end_date, family.entries_cache_version,
+        family.accounts.maximum(:updated_at)&.to_i
+      ]) do
+        AccountMonthTotals.new(
+          family,
+          transactions_scope: transactions_scope,
+          account_ids: account_ids,
+          included_account_ids: included_account_ids
+        ).call
+      end
     end
 
     def monetizable_currency

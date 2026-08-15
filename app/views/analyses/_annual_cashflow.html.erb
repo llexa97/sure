@@ -45,8 +45,14 @@
 
   <% if analysis.checking_accounts.any? %>
     <div class="flex flex-wrap items-center gap-2" aria-label="<%= t("analyses.show.chart.included_accounts") %>">
-      <% analysis.checking_accounts.each do |account| %>
-        <%= render DS::Pill.new(label: account.name, tone: :neutral, marker: false) %>
+      <% analysis.annual_account_legend.each do |account| %>
+        <%= render DS::Pill.new(
+          label: account[:name],
+          tone: :neutral,
+          marker: false,
+          show_dot: true,
+          custom_color: account[:color]
+        ) %>
       <% end %>
     </div>
   <% end %>
@@ -54,12 +60,12 @@
   <% if analysis.has_annual_cashflow? %>
     <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
       <span class="flex items-center gap-1.5 text-xs text-secondary">
-        <span class="w-2.5 h-2.5 rounded-full bg-success"></span>
-        <%= t("analyses.show.chart.income") %>
+        <%= icon("arrow-down-left", size: "xs") %>
+        <%= t("analyses.show.chart.income_position") %>
       </span>
       <span class="flex items-center gap-1.5 text-xs text-secondary">
-        <span class="w-2.5 h-2.5 rounded-full bg-subdued"></span>
-        <%= t("analyses.show.chart.expense") %>
+        <%= icon("arrow-up-right", size: "xs") %>
+        <%= t("analyses.show.chart.expense_position") %>
       </span>
       <span class="text-xs text-secondary privacy-sensitive">
         <%= t("analyses.show.chart.annual_net", amount: analysis.annual_summary[:net].format) %>
@@ -75,7 +81,8 @@
         bar_chart_data_value: analysis.annual_bars.to_json,
         bar_chart_currency_value: Current.family.currency,
         bar_chart_income_label_value: t("analyses.show.chart.income"),
-        bar_chart_expense_label_value: t("analyses.show.chart.expense")
+        bar_chart_expense_label_value: t("analyses.show.chart.expense"),
+        bar_chart_stacked_value: true
       }
     ) %>
 
@@ -85,17 +92,25 @@
         <thead>
           <tr>
             <th><%= t("analyses.show.chart.period") %></th>
+            <th><%= t("analyses.show.chart.account") %></th>
             <th><%= t("analyses.show.chart.income") %></th>
+            <th><%= t("analyses.show.chart.income_share") %></th>
             <th><%= t("analyses.show.chart.expense") %></th>
+            <th><%= t("analyses.show.chart.expense_share") %></th>
           </tr>
         </thead>
         <tbody>
           <% analysis.annual_bars.each do |bar| %>
-            <tr>
-              <td><%= bar[:label] %></td>
-              <td><%= format_money Money.new(bar[:income], Current.family.currency) %></td>
-              <td><%= format_money Money.new(bar[:expense], Current.family.currency) %></td>
-            </tr>
+            <% bar[:accounts].each do |account| %>
+              <tr>
+                <td><%= bar[:label] %></td>
+                <td><%= account[:name] %></td>
+                <td><%= format_money Money.new(account[:income], Current.family.currency) %></td>
+                <td><%= number_to_percentage(account[:income_percentage], precision: 1, strip_insignificant_zeros: true) %></td>
+                <td><%= format_money Money.new(account[:expense], Current.family.currency) %></td>
+                <td><%= number_to_percentage(account[:expense_percentage], precision: 1, strip_insignificant_zeros: true) %></td>
+              </tr>
+            <% end %>
           <% end %>
         </tbody>
       </table>

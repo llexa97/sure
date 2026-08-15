@@ -20,8 +20,15 @@ class AnalysesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "show renders annual checking charts detailed expenses and data studies" do
+    chart_account = @family.accounts.create!(
+      owner: @user,
+      name: "Analysis chart checking",
+      currency: @family.currency,
+      balance: 0,
+      accountable: Depository.new(subtype: "checking")
+    )
     create_transaction(
-      account: accounts(:depository),
+      account: chart_account,
       date: Date.current,
       amount: 84.25,
       category: @category,
@@ -33,7 +40,7 @@ class AnalysesControllerTest < ActionDispatch::IntegrationTest
     assert_response :ok
     assert_select "h1", text: I18n.t("analyses.show.title")
     assert_select "a[href=?]", analysis_path, minimum: 1
-    assert_select "[data-controller='bar-chart']", count: 1
+    assert_select "[data-controller='bar-chart'][data-bar-chart-stacked-value='true']", count: 1
     assert_select "[data-controller='time-series-chart']", count: 1
     assert_select "[data-controller='donut-chart']", count: 2
     assert_select "#expense-breakdown-title", text: I18n.t("analyses.show.categories.detailed_title")
@@ -45,6 +52,11 @@ class AnalysesControllerTest < ActionDispatch::IntegrationTest
 
     annual_bars = JSON.parse(css_select("[data-controller='bar-chart']").first["data-bar-chart-data-value"])
     assert_equal Date.current.month, annual_bars.size
+    current_month = annual_bars.last
+    account_segment = current_month.fetch("accounts").find { |account| account["id"] == chart_account.id.to_s }
+    assert_not_nil account_segment
+    assert_equal 84.25, account_segment["expense"]
+    assert_operator account_segment["expense_percentage"], :>, 0
 
     category_link = css_select("a[data-category-id='#{@category.id}']").first
     assert_not_nil category_link

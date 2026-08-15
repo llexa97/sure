@@ -89,6 +89,25 @@ class IncomeStatementTest < ActiveSupport::TestCase
     assert_equal Money.new(200, @family.currency), checking_only_totals.expense_money
   end
 
+  test "monthly_totals_by_account groups income and expenses by account" do
+    totals = IncomeStatement.new(@family)
+      .monthly_totals_by_account(
+        period: Period.last_30_days,
+        account_ids: [ @checking_account.id, @credit_card_account.id, @loan_account.id ]
+      )
+      .index_by(&:account_id)
+
+    checking = totals.fetch(@checking_account.id.to_s)
+    assert_equal Date.current.beginning_of_month, checking.period_start
+    assert_equal Money.new(1000, @family.currency), checking.income_money
+    assert_equal Money.new(200, @family.currency), checking.expense_money
+
+    credit_card = totals.fetch(@credit_card_account.id.to_s)
+    assert_equal Money.new(0, @family.currency), credit_card.income_money
+    assert_equal Money.new(700, @family.currency), credit_card.expense_money
+    assert_not totals.key?(@loan_account.id.to_s)
+  end
+
   test "eligible_accounts excludes accounts not reflected in totals" do
     tax_advantaged_account = @family.accounts.create! name: "401k", currency: @family.currency, balance: 10000, accountable: Investment.new(subtype: "401k")
     excluded_account = @family.accounts.create! name: "Excluded", currency: @family.currency, balance: 0, exclude_from_reports: true, accountable: Depository.new

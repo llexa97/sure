@@ -60,6 +60,16 @@ module Analysis
         .sort_by { |account| account.name.to_s.downcase }
     end
 
+    def annual_account_legend
+      @annual_account_legend ||= checking_accounts.each_with_index.map do |account, index|
+        {
+          id: account.id.to_s,
+          name: account.name,
+          color: Category::COLORS[index % Category::COLORS.length]
+        }
+      end
+    end
+
     def annual_period
       @annual_period ||= begin
         start_date = Date.new(cashflow_year, 1, 1)
@@ -74,16 +84,31 @@ module Analysis
           []
         else
           annual_bar_ranges.map do |range|
-            bucket_period = Period.custom(start_date: range[:start_date], end_date: range[:end_date])
-            totals = income_statement.totals_for(bucket_period, account_ids: checking_account_ids)
+            accounts = annual_account_legend.map do |account|
+              totals = annual_monthly_account_totals[[ range[:start_date], account[:id] ]]
+
+              account.merge(
+                income: (totals&.income_money&.amount || 0).to_d,
+                expense: (totals&.expense_money&.amount || 0).to_d
+              )
+            end
+            income = accounts.sum { |account| account[:income] }
+            expense = accounts.sum { |account| account[:expense] }
+            accounts.each do |account|
+              account[:income_percentage] = percentage_share(account[:income], income)
+              account[:expense_percentage] = percentage_share(account[:expense], expense)
+              account[:income] = account[:income].to_f.round(2)
+              account[:expense] = account[:expense].to_f.round(2)
+            end
 
             {
               date: range[:start_date].iso8601,
               end_date: range[:end_date].iso8601,
               label: I18n.l(range[:start_date], format: "%b").capitalize,
               short_label: I18n.l(range[:start_date], format: "%b").capitalize,
-              income: totals.income_money.amount.to_f.round(2),
-              expense: totals.expense_money.amount.to_f.round(2),
+              income: income.to_f.round(2),
+              expense: expense.to_f.round(2),
+              accounts: accounts,
               highlighted: range[:end_date] == Date.current,
               partial: range[:partial]
             }
@@ -113,14 +138,16 @@ module Analysis
 
     def annual_account_breakdown
       @annual_account_breakdown ||= begin
-        rows = checking_accounts.each_with_index.map do |account, index|
+        legend_by_id = annual_account_legend.index_by { |account| account[:id] }
+        rows = checking_accounts.map do |account|
           totals = income_statement.totals_for(annual_period, account_ids: [ account.id ])
           net = totals.income_money - totals.expense_money
+          metadata = legend_by_id.fetch(account.id.to_s)
 
           {
             id: account.id.to_s,
             name: account.name,
-            color: Category::COLORS[index % Category::COLORS.length],
+            color: metadata[:color],
             income: totals.income_money,
             expense: totals.expense_money,
             expense_value: totals.expense_money.amount.to_f.round(2),
@@ -416,6 +443,12 @@ module Analysis
         end
       end
 
+      def annual_monthly_account_totals
+        @annual_monthly_account_totals ||= income_statement
+          .monthly_totals_by_account(period: annual_period, account_ids: checking_account_ids)
+          .index_by { |total| [ total.period_start, total.account_id ] }
+      end
+
       def build_subcategory_expense_categories(parent)
         children = parent.subcategories.to_a
         rows = children.filter_map do |category|
@@ -551,6 +584,12 @@ module Analysis
         return nil if previous_value.zero?
 
         ((current_value - previous_value) / previous_value.abs * 100).round(1)
+      end
+
+      def percentage_share(value, total)
+        return 0 if total.zero?
+
+        (value.to_d / total.to_d * 100).round(1).to_f
       end
 
       def category_key(category)

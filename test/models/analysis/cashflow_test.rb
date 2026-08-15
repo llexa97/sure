@@ -24,6 +24,8 @@ class Analysis::CashflowTest < ActiveSupport::TestCase
       create_transaction(account: @account, date: Date.new(2026, 8, 10), amount: 125, category: @category, name: "Current expense")
       create_transaction(account: @account, date: Date.new(2026, 7, 5), amount: -400, name: "Previous income")
       create_transaction(account: @account, date: Date.new(2026, 7, 10), amount: 100, category: @category, name: "Previous expense")
+      create_transaction(account: @account, date: Date.new(2026, 1, 4), amount: -100, name: "First account January income")
+      create_transaction(account: @account, date: Date.new(2026, 1, 9), amount: 50, category: @category, name: "First account January expense")
       create_transaction(account: second_checking, date: Date.new(2026, 1, 5), amount: -200, name: "Second account income")
       create_transaction(account: second_checking, date: Date.new(2026, 1, 10), amount: 50, category: @category, name: "Second account expense")
       create_transaction(account: savings, date: Date.new(2026, 1, 6), amount: -999, name: "Savings income")
@@ -54,12 +56,32 @@ class Analysis::CashflowTest < ActiveSupport::TestCase
       assert_equal Date.new(2026, 8, 15), analysis.annual_period.end_date
       assert_equal 8, analysis.annual_bars.size
       assert analysis.annual_bars.last[:partial]
-      assert_equal 1100, analysis.annual_bars.sum { |bar| bar[:income] }
-      assert_equal 275, analysis.annual_bars.sum { |bar| bar[:expense] }
-      assert_equal 1100, analysis.annual_summary[:income].amount
-      assert_equal 275, analysis.annual_summary[:expense].amount
-      assert_equal 825, analysis.annual_summary[:net].amount
-      assert_equal 825, analysis.cumulative_net_series.last.value.amount
+      assert_equal 1200, analysis.annual_bars.sum { |bar| bar[:income] }
+      assert_equal 325, analysis.annual_bars.sum { |bar| bar[:expense] }
+      assert_equal 1200, analysis.annual_summary[:income].amount
+      assert_equal 325, analysis.annual_summary[:expense].amount
+      assert_equal 875, analysis.annual_summary[:net].amount
+      assert_equal 875, analysis.cumulative_net_series.last.value.amount
+
+      legend = analysis.annual_account_legend
+      assert_includes legend.pluck(:id), @account.id.to_s
+      assert_includes legend.pluck(:id), second_checking.id.to_s
+      assert_not_includes legend.pluck(:id), savings.id.to_s
+      assert_equal legend.size, legend.pluck(:color).uniq.size
+
+      january_accounts = analysis.annual_bars.first[:accounts].index_by { |account| account[:id] }
+      first_account = january_accounts.fetch(@account.id.to_s)
+      assert_equal 100, first_account[:income]
+      assert_equal 50, first_account[:expense]
+      assert_equal 33.3, first_account[:income_percentage]
+      assert_equal 50, first_account[:expense_percentage]
+
+      second_account = january_accounts.fetch(second_checking.id.to_s)
+      assert_equal 200, second_account[:income]
+      assert_equal 50, second_account[:expense]
+      assert_equal 66.7, second_account[:income_percentage]
+      assert_equal 50, second_account[:expense_percentage]
+      assert_not january_accounts.key?(savings.id.to_s)
 
       account_row = analysis.annual_account_breakdown.find { |row| row[:id] == second_checking.id.to_s }
       assert_equal 200, account_row[:income].amount

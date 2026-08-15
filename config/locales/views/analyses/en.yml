@@ -19,8 +19,9 @@ en:
         total: Total net expenses
         without_subcategory: Without a subcategory
       chart:
+        account: Checking account
         annual_net: "Annual balance: %{amount}"
-        aria_label: Annual chart comparing checking-account income and expenses in %{year}
+        aria_label: Annual income and expense chart for %{year}, with each bar broken down by checking account
         day_range: "%{from}–%{to}"
         description:
           one: Monthly total for your checking account, excluding internal transfers and pending transactions.
@@ -28,13 +29,17 @@ en:
         empty_description: No confirmed checking-account cash flow is available for this year.
         empty_title: No cash flow to display
         expense: Expenses
+        expense_position: Expenses · right bar
+        expense_share: Expense share
         included_accounts: Included checking accounts
         income: Income
+        income_position: Income · left bar
+        income_share: Income share
         next_year: Next year
         partial_period: Data through %{date} for the current period.
         period: Period
         previous_year: Previous year
-        table_caption: Monthly income and expense values for %{year}
+        table_caption: Monthly income and expense values and shares by checking account for %{year}
         title: Annual income and expenses
       accounts:
         account: Checking account

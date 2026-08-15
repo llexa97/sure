@@ -2,8 +2,9 @@ import { Controller } from "@hotwired/stimulus";
 import * as d3 from "d3";
 import { CHART_TOOLTIP_CLASSES } from "utils/chart_tooltip";
 
-// Grouped bar chart used by the dashboard "money flow" widget — each month
-// shows an expense bar (red) and an income bar (green) side by side.
+// Grouped bar chart used by the dashboard "money flow" widget and the annual
+// analysis. The analysis can opt into account-colored stacked segments while
+// the dashboard keeps its original single-color income/expense bars.
 // Modeled after time_series_chart_controller's lifecycle (install/teardown,
 // ResizeObserver, turbo:load reinstall, page-relative tooltip positioning)
 // but with scaleBand/scaleLinear instead of a line.
@@ -17,6 +18,7 @@ export default class extends Controller {
     currency: { type: String, default: "USD" },
     incomeLabel: { type: String, default: "Income" },
     expenseLabel: { type: String, default: "Expenses" },
+    stacked: { type: Boolean, default: false },
   };
 
   _resizeObserver = null;
@@ -66,7 +68,10 @@ export default class extends Controller {
       .attr("transform", `translate(${margin.left},${margin.top})`);
 
     const series = ["income", "expense"];
-    const seriesColor = { expense: "var(--color-gray-400)", income: "var(--color-success)" };
+    const seriesColor = {
+      expense: "var(--color-gray-400)",
+      income: "var(--color-success)",
+    };
 
     const x0 = d3
       .scaleBand()
@@ -74,10 +79,17 @@ export default class extends Controller {
       .range([0, innerWidth])
       .padding(0.3);
 
-    const x1 = d3.scaleBand().domain(series).range([0, x0.bandwidth()]).padding(0.15);
+    const x1 = d3
+      .scaleBand()
+      .domain(series)
+      .range([0, x0.bandwidth()])
+      .padding(0.15);
 
     const maxValue = d3.max(data, (d) => Math.max(d.income, d.expense)) || 1;
-    const y = d3.scaleLinear().domain([0, maxValue * 1.1]).range([innerHeight, 0]);
+    const y = d3
+      .scaleLinear()
+      .domain([0, maxValue * 1.1])
+      .range([innerHeight, 0]);
     // Floor tiny-but-nonzero bars (e.g. an in-progress month) at 2px so they stay visible.
     const barHeight = (v) => (v > 0 ? Math.max(2, innerHeight - y(v)) : 0);
 
@@ -86,7 +98,7 @@ export default class extends Controller {
       .append("div")
       .attr("class", `${CHART_TOOLTIP_CLASSES} opacity-0 top-0`);
 
-    const showTooltip = (event, month, key) => {
+    const showTooltip = (event, month, key, segment = null) => {
       const estimatedTooltipWidth = 200;
       const pageWidth = document.body.clientWidth;
       const tooltipX = event.pageX + 10;
@@ -94,7 +106,7 @@ export default class extends Controller {
       const adjustedX = overflowX > 0 ? event.pageX - overflowX - 20 : tooltipX;
 
       tooltip
-        .html(this._tooltipTemplate(month, key))
+        .html(this._tooltipTemplate(month, key, segment))
         .style("opacity", 1)
         .style("left", `${adjustedX}px`)
         .style("top", `${event.pageY - 10}px`);
@@ -109,19 +121,33 @@ export default class extends Controller {
       .attr("class", "month")
       .attr("transform", (d) => `translate(${x0(d.label)},0)`);
 
-    monthGroups
+    const seriesGroups = monthGroups
+      .selectAll("g.series")
+      .data((month) => series.map((key) => ({ key, month, value: month[key] })))
+      .join("g")
+      .attr("class", "series")
+      .attr("transform", (d) => `translate(${x1(d.key)},0)`);
+
+    seriesGroups
       .selectAll("rect")
-      .data((d) => series.map((key) => ({ key, value: d[key], month: d })))
+      .data((d) =>
+        this._segmentsFor({
+          month: d.month,
+          key: d.key,
+          totalHeight: barHeight(d.value),
+          innerHeight,
+          fallbackColor: seriesColor[d.key],
+        }),
+      )
       .join("rect")
-      .attr("x", (d) => x1(d.key))
-      .attr("y", (d) => innerHeight - barHeight(d.value))
+      .attr("x", 0)
+      .attr("y", (d) => d.y)
       .attr("width", x1.bandwidth())
-      .attr("height", (d) => barHeight(d.value))
-      .attr("rx", 3)
-      .attr("fill", (d) => seriesColor[d.key])
-      // In-progress month (period capped at today) reads as provisional.
-      .attr("fill-opacity", (d) => (d.month.partial ? 0.5 : 1))
-      .on("mousemove", (event, d) => showTooltip(event, d.month, d.key))
+      .attr("height", (d) => d.height)
+      .attr("rx", (d) => (d.account ? 1 : 3))
+      .attr("fill", (d) => d.color)
+      .attr("fill-opacity", (d) => d.opacity)
+      .on("mousemove", (event, d) => showTooltip(event, d.month, d.key, d))
       .on("mouseleave", hideTooltip);
 
     const axisLabels = group
@@ -130,7 +156,11 @@ export default class extends Controller {
       .call(d3.axisBottom(x0).tickSize(0))
       .call((g) => g.select(".domain").remove())
       .selectAll("text")
-      .attr("class", (_d, i) => (data[i].highlighted ? "text-primary fill-current" : "text-secondary fill-current"))
+      .attr("class", (_d, i) =>
+        data[i].highlighted
+          ? "text-primary fill-current"
+          : "text-secondary fill-current",
+      )
       .style("font-size", "12px")
       .style("font-weight", (_d, i) => (data[i].highlighted ? 600 : 500));
 
@@ -145,7 +175,8 @@ export default class extends Controller {
   _fitAxisLabels(labels, data, step) {
     if (labels.empty()) return;
 
-    const widest = () => d3.max(labels.nodes(), (node) => node.getComputedTextLength()) || 0;
+    const widest = () =>
+      d3.max(labels.nodes(), (node) => node.getComputedTextLength()) || 0;
     const fits = () => widest() <= step - LABEL_GAP_PX;
 
     if (fits()) return;
@@ -164,18 +195,85 @@ export default class extends Controller {
     labels.style("display", (_d, i) => (i % 2 === keepParity ? null : "none"));
   }
 
-  _tooltipTemplate(month, key) {
-    const label = key === "income" ? this.incomeLabelValue : this.expenseLabelValue;
-    // Match the bar/legend palette — expenses render gray, not destructive red.
-    const color = key === "income" ? "var(--color-success)" : "var(--color-gray-400)";
+  _segmentsFor({ month, key, totalHeight, innerHeight, fallbackColor }) {
+    if (!this.stackedValue) {
+      return [
+        {
+          month,
+          key,
+          value: month[key],
+          y: innerHeight - totalHeight,
+          height: totalHeight,
+          color: fallbackColor,
+          opacity: month.partial ? 0.5 : 1,
+        },
+      ];
+    }
+
+    const accounts = (month.accounts || [])
+      .map((account) => ({ ...account, value: Number(account[key]) || 0 }))
+      .filter((account) => account.value > 0);
+    const accountTotal = d3.sum(accounts, (account) => account.value);
+
+    if (accountTotal <= 0 || totalHeight <= 0) return [];
+
+    let stackedHeight = 0;
+    return accounts.map((account, index) => {
+      // Assign any floating-point remainder to the last segment so all account
+      // pieces exactly fill the original monthly total bar.
+      const height =
+        index === accounts.length - 1
+          ? totalHeight - stackedHeight
+          : totalHeight * (account.value / accountTotal);
+      stackedHeight += height;
+
+      return {
+        month,
+        key,
+        account,
+        value: account.value,
+        percentage: Number(account[`${key}_percentage`]) || 0,
+        y: innerHeight - stackedHeight,
+        height,
+        color: account.color,
+        // Position differentiates the two bar types; the lighter right-hand
+        // stack adds a second cue without changing an account's assigned hue.
+        opacity: (key === "expense" ? 0.65 : 1) * (month.partial ? 0.6 : 1),
+      };
+    });
+  }
+
+  _tooltipTemplate(month, key, segment = null) {
+    const label =
+      key === "income" ? this.incomeLabelValue : this.expenseLabelValue;
+    const color =
+      segment?.color ||
+      (key === "income" ? "var(--color-success)" : "var(--color-gray-400)");
+    const accountName = segment?.account?.name;
+    const value = segment?.value ?? month[key];
+    const percentage = accountName
+      ? `<span class="text-secondary">(${this._formatPercentage(segment.percentage)})</span>`
+      : "";
 
     return `
-      <div class="text-xs text-secondary mb-1">${month.label}</div>
+      <div class="text-xs text-secondary mb-1">${this._escapeHtml(month.label)}</div>
+      ${accountName ? `<div class="text-xs text-primary font-medium mb-1">${this._escapeHtml(accountName)}</div>` : ""}
       <div class="flex items-center gap-1.5 text-primary font-medium tabular-nums">
-        <span class="inline-block w-2 h-2 rounded-full" style="background-color: ${color};"></span>
-        ${label}: ${this._formatCurrency(month[key])}
+        <span class="inline-block w-2 h-2 rounded-full" style="background-color: ${this._escapeHtml(color)};"></span>
+        ${this._escapeHtml(label)}: ${this._formatCurrency(value)} ${percentage}
       </div>
     `;
+  }
+
+  _formatPercentage(value) {
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style: "percent",
+        maximumFractionDigits: 1,
+      }).format((Number(value) || 0) / 100);
+    } catch {
+      return `${value}%`;
+    }
   }
 
   _formatCurrency(value) {
@@ -188,5 +286,19 @@ export default class extends Controller {
     } catch {
       return value;
     }
+  }
+
+  _escapeHtml(value) {
+    return String(value ?? "").replace(
+      /[&<>"']/g,
+      (character) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#039;",
+        })[character],
+    );
   }
 }

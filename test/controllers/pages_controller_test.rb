@@ -145,7 +145,9 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     get root_path
 
     assert_response :ok
-    assert_select "[data-controller='bar-chart']"
+    chart = css_select("[data-controller='bar-chart']").first
+    assert_not_nil chart
+    assert_nil chart["data-bar-chart-stacked-value"]
   end
 
   test "dashboard scopes money flow widget to selected month and accounts" do
