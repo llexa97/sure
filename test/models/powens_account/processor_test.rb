@@ -38,18 +38,18 @@ class PowensAccount::ProcessorTest < ActiveSupport::TestCase
   test "updates linked account balance and imports transactions with Powens metadata" do
     assert_equal "Depository", @account.accountable_type
 
-    assert_difference "@account.entries.count", 2 do
-      PowensAccount::Processor.new(@powens_account).process
+    assert_difference "@account.entries.count", 1 do
+      assert_no_difference "Valuation.count" do
+        PowensAccount::Processor.new(@powens_account).process
+      end
     end
 
     entry = @account.entries.find_by!(external_id: "powens_123", source: "powens")
-    current_anchor = @account.valuations.current_anchor.includes(:entry).first
 
     assert_equal BigDecimal("1234.56"), @account.reload.balance
     assert_equal BigDecimal("1234.56"), @account.cash_balance
     assert_equal "EUR", @account.currency
-    assert_equal Date.current, current_anchor.entry.date
-    assert_equal BigDecimal("1234.56"), current_anchor.entry.amount
+    assert_not @account.valuations.current_anchor.exists?
     assert_equal "powens", entry.source
     assert_equal "powens_123", entry.external_id
     assert_equal BigDecimal("15.25"), entry.amount
@@ -58,6 +58,27 @@ class PowensAccount::ProcessorTest < ActiveSupport::TestCase
     assert_equal "123", entry.transaction.extra.dig("powens", "transaction_id").to_s
     assert_equal "-15.25", entry.transaction.extra.dig("powens", "raw_value")
     assert_equal "sure_expense_positive", entry.transaction.extra.dig("powens", "amount_convention")
+  end
+
+  test "updates an existing current anchor in place without adding balance entries" do
+    @powens_account.update!(raw_transactions_payload: [])
+    current_anchor = @account.entries.create!(
+      date: 2.days.ago.to_date,
+      name: Valuation.build_current_anchor_name(@account.accountable_type),
+      amount: BigDecimal("1200"),
+      currency: @account.currency,
+      entryable: Valuation.new(kind: "current_anchor")
+    ).entryable
+
+    assert_no_difference [ "Entry.count", "Valuation.count" ] do
+      PowensAccount::Processor.new(@powens_account).process
+    end
+
+    current_anchor.reload
+    assert_equal "current_anchor", current_anchor.kind
+    assert_equal BigDecimal("1234.56"), current_anchor.entry.amount
+    assert_equal Date.current, current_anchor.entry.date
+    assert_equal "EUR", current_anchor.entry.currency
   end
 
   test "stores loan balances as positive liabilities" do
@@ -73,7 +94,9 @@ class PowensAccount::ProcessorTest < ActiveSupport::TestCase
     )
     AccountProvider.create!(account: loan_account, provider: powens_loan)
 
-    PowensAccount::Processor.new(powens_loan).process
+    assert_no_difference "Valuation.count" do
+      PowensAccount::Processor.new(powens_loan).process
+    end
 
     assert_equal BigDecimal("13960.44"), loan_account.reload.balance
     assert_equal BigDecimal("13960.44"), loan_account.cash_balance

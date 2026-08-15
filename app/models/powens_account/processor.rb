@@ -1,6 +1,4 @@
 class PowensAccount::Processor
-  ProcessingError = Class.new(StandardError)
-
   attr_reader :powens_account, :skipped_entries
 
   def initialize(powens_account)
@@ -28,10 +26,16 @@ class PowensAccount::Processor
 
     def update_current_balance!(account, balance:, cash_balance:, currency:)
       ActiveRecord::Base.transaction do
-        account.update!(cash_balance: cash_balance, currency: currency)
+        account.update!(balance: balance, cash_balance: cash_balance, currency: currency)
 
-        result = Account::CurrentBalanceManager.new(account).set_current_balance(balance)
-        raise ProcessingError, "Failed to set current balance: #{result.error}" unless result.success?
+        # Powens provides a current balance snapshot on every sync.  Do not pass
+        # it through CurrentBalanceManager: rotating its daily current anchor
+        # creates user-visible "Manual balance/principal update" entries.
+        #
+        # Keep an anchor created by an older version accurate for reverse balance
+        # calculations, but update it in place and never create a new valuation.
+        current_anchor = account.valuations.current_anchor.includes(:entry).first
+        current_anchor&.entry&.update!(amount: balance, date: Date.current, currency: currency)
       end
     end
 
