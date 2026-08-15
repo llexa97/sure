@@ -8,6 +8,7 @@ en:
       resize_right_sidebar: Resize the assistant sidebar
       skip_to_main: Skip to main content
       nav:
+        analysis: Analysis
         assistant: Assistant
         budgets: Budgets
         home: Home

@@ -1,0 +1,50 @@
+---
+en:
+  analyses:
+    show:
+      categories:
+        amount: Amount
+        category: Category
+        change: Change
+        description: Refunds are deducted to show the real net cost of each category.
+        empty_description: Add or categorize transactions to see your spending breakdown.
+        empty_title: No expenses in this period
+        new: New
+        open_transactions: View transactions in the %{category} category
+        previous_amount: "Previous period amount: %{amount}"
+        share: Share
+        title: Net expenses by category
+        total: Total net expenses
+      chart:
+        aria_label: Chart comparing income and expenses over the selected period
+        day_range: "%{from}–%{to}"
+        description: Compare money coming in and going out throughout the selected period.
+        empty_description: Add transactions or connect an account to visualize your cash flow.
+        empty_title: No cash flow to display
+        expense: Expenses
+        income: Income
+        partial_period: Data through %{date} for the current period.
+        period: Period
+        table_caption: Detailed values for the income and expense chart
+        title: Income and expenses
+      current_period: Current
+      date_range: "%{start_date} to %{end_date}"
+      next_period: Next period
+      period_aria_label: Analysis level
+      period_labels:
+        quarterly: Q%{quarter} %{year}
+      periods:
+        monthly: Month
+        quarterly: Quarter
+        yearly: Year
+      previous_period: Previous period
+      subtitle: Visualize, compare, and explore your income and different expenses.
+      summary:
+        expense: Expenses
+        income: Income
+        net: Balance
+        no_comparison: No comparison available
+        points_short: pts
+        savings_rate: Savings rate
+        vs_previous: vs previous period
+      title: Analysis

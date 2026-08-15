@@ -4,6 +4,7 @@ fr:
     application:
       insights: Analyses
       nav:
+        analysis: Analyse
         assistant: Assistant
         budgets: Budgets
         goals: Objectifs

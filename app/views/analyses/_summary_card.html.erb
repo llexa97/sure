@@ -1,0 +1,35 @@
+<%# locals: (label:, value:, icon_name:, change:, positive_is_good:, value_class: "text-primary", change_suffix: "%") %>
+<%
+  value_class ||= "text-primary"
+  change_suffix ||= "%"
+  change_icon = change&.positive? ? "arrow-up" : (change&.negative? ? "arrow-down" : "minus")
+  favorable_change = change.present? && !change.zero? && (change.positive? == positive_is_good)
+  change_class = if change.blank? || change.zero?
+    "text-secondary"
+  elsif favorable_change
+    "text-success"
+  else
+    "text-destructive"
+  end
+%>
+
+<%= render DS::Card.new(class: "gap-3") do %>
+  <div class="flex items-center gap-2 text-secondary">
+    <%= icon(icon_name, size: "sm") %>
+    <h2 class="text-sm font-medium"><%= label %></h2>
+  </div>
+
+  <p class="text-2xl font-semibold privacy-sensitive <%= value_class %>"><%= value %></p>
+
+  <div class="flex items-center gap-1.5 text-xs">
+    <% if change.nil? %>
+      <span class="text-secondary"><%= t("analyses.show.summary.no_comparison") %></span>
+    <% else %>
+      <span class="inline-flex items-center gap-1 font-medium privacy-sensitive <%= change_class %>">
+        <%= icon(change_icon, size: "xs", color: "current") %>
+        <%= "+" if change.positive? %><%= number_with_precision(change, precision: 1, strip_insignificant_zeros: true) %><%= change_suffix %>
+      </span>
+      <span class="text-subdued"><%= t("analyses.show.summary.vs_previous") %></span>
+    <% end %>
+  </div>
+<% end %>

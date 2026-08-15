@@ -1,0 +1,50 @@
+---
+fr:
+  analyses:
+    show:
+      categories:
+        amount: Montant
+        category: Catégorie
+        change: Évolution
+        description: Les remboursements sont déduits pour montrer le coût net réel de chaque catégorie.
+        empty_description: Ajoutez ou catégorisez des transactions pour faire apparaître la répartition de vos dépenses.
+        empty_title: Aucune dépense sur cette période
+        new: Nouveau
+        open_transactions: Voir les transactions de la catégorie %{category}
+        previous_amount: "Montant de la période précédente : %{amount}"
+        share: Part
+        title: Dépenses nettes par catégorie
+        total: Total des dépenses nettes
+      chart:
+        aria_label: Graphique comparant les revenus et les dépenses sur la période sélectionnée
+        day_range: "%{from}–%{to}"
+        description: Comparez les entrées et les sorties au fil de la période sélectionnée.
+        empty_description: Ajoutez des transactions ou connectez un compte pour visualiser vos flux financiers.
+        empty_title: Aucun flux à afficher
+        expense: Dépenses
+        income: Revenus
+        partial_period: Données arrêtées au %{date} pour la période en cours.
+        period: Période
+        table_caption: Valeurs détaillées du graphique des revenus et des dépenses
+        title: Revenus et dépenses
+      current_period: En cours
+      date_range: Du %{start_date} au %{end_date}
+      next_period: Période suivante
+      period_aria_label: Niveau d'analyse
+      period_labels:
+        quarterly: T%{quarter} %{year}
+      periods:
+        monthly: Mois
+        quarterly: Trimestre
+        yearly: Année
+      previous_period: Période précédente
+      subtitle: Visualisez, comparez et explorez vos revenus et vos différentes dépenses.
+      summary:
+        expense: Dépenses
+        income: Revenus
+        net: Solde
+        no_comparison: Pas de comparaison disponible
+        points_short: pts
+        savings_rate: Taux d'épargne
+        vs_previous: vs période précédente
+      title: Analyse
