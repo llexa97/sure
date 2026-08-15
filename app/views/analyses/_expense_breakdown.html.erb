@@ -1,0 +1,172 @@
+<%# locals: (analysis:) %>
+
+<%= render DS::Card.new(class: "gap-5", aria: { labelledby: "expense-breakdown-title" }) do %>
+  <div class="flex flex-col gap-3 @lg:flex-row @lg:items-start @lg:justify-between">
+    <div>
+      <h2 id="expense-breakdown-title" class="text-lg font-medium text-primary">
+        <%= analysis.expense_category_parent ? t("analyses.show.categories.detailed_title") : t("analyses.show.categories.title") %>
+      </h2>
+      <p class="mt-1 text-sm text-secondary">
+        <% if analysis.expense_category_parent %>
+          <%= t("analyses.show.categories.detailed_description", category: analysis.expense_category_parent.display_name) %>
+        <% else %>
+          <%= t("analyses.show.categories.description") %>
+        <% end %>
+      </p>
+    </div>
+
+    <div class="sm:text-right shrink-0">
+      <p class="text-xs text-secondary"><%= t("analyses.show.categories.total") %></p>
+      <p class="mt-1 text-xl font-semibold text-primary privacy-sensitive"><%= analysis.expense_total.format %></p>
+    </div>
+  </div>
+
+  <% if analysis.expense_categories.any? %>
+    <%= tag.div(
+      class: "grid grid-cols-1 @4xl:grid-cols-3 gap-8 items-center",
+      data: {
+        controller: "donut-chart",
+        donut_chart_segments_value: analysis.expense_segments.to_json,
+        donut_chart_segment_opacity_value: 0.9,
+        donut_chart_extended_hover_value: true,
+        donut_chart_hover_extension_value: 3,
+        donut_chart_enable_click_value: true,
+        donut_chart_start_date_value: analysis.period.start_date,
+        donut_chart_end_date_value: analysis.period.end_date
+      }
+    ) do %>
+      <div class="w-full max-w-72 mx-auto">
+        <div class="h-72 relative">
+          <div data-donut-chart-target="chartContainer" class="absolute inset-0 pointer-events-none"></div>
+
+          <div data-donut-chart-target="contentContainer" class="flex justify-center items-center h-full">
+            <div data-donut-chart-target="defaultContent" class="flex flex-col items-center text-center">
+              <span class="text-sm text-secondary"><%= t("analyses.show.categories.total") %></span>
+              <span data-donut-chart-target="amount" class="mt-2 text-3xl font-medium text-primary privacy-sensitive whitespace-nowrap">
+                <%= analysis.expense_total.format %>
+              </span>
+            </div>
+
+            <% analysis.expense_categories.each do |category| %>
+              <div id="segment_<%= category[:id] %>" class="hidden text-center">
+                <p class="text-sm text-secondary"><%= category[:display_name] %></p>
+                <p data-donut-chart-target="amount" class="mt-2 text-3xl font-medium text-primary privacy-sensitive whitespace-nowrap">
+                  <%= category[:amount].format %>
+                </p>
+                <p class="mt-1 text-sm text-secondary privacy-sensitive"><%= number_to_percentage(category[:percentage], precision: 1, strip_insignificant_zeros: true) %></p>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      </div>
+
+      <div class="@4xl:col-span-2 bg-container-inset rounded-xl p-1 overflow-x-auto">
+        <div class="min-w-full">
+          <div class="grid grid-cols-12 gap-2 px-3 py-2 uppercase text-xs font-medium text-secondary">
+            <span class="col-span-7 @2xl:col-span-6"><%= t("analyses.show.categories.category") %></span>
+            <span class="col-span-3 text-right"><%= t("analyses.show.categories.amount") %></span>
+            <span class="hidden @2xl:block @2xl:col-span-1 text-right"><%= t("analyses.show.categories.share") %></span>
+            <span class="col-span-2 text-right"><%= t("analyses.show.categories.change") %></span>
+          </div>
+
+          <div class="rounded-lg shadow-border-xs bg-container px-3">
+            <% analysis.expense_categories.each_with_index do |category, index| %>
+              <%
+                category_content = capture do
+              %>
+                <div class="col-span-7 @2xl:col-span-6 min-w-0">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <div class="h-8 w-8 shrink-0 rounded-full flex items-center justify-center"
+                         style="background-color: color-mix(in oklab, <%= category[:color] %> 10%, transparent); color: <%= category[:color] %>;">
+                      <% if category[:icon].present? %>
+                        <%= icon(category[:icon], color: "current", size: "sm") %>
+                      <% else %>
+                        <%= render DS::FilledIcon.new(
+                          variant: :text,
+                          hex_color: category[:color],
+                          text: category[:display_name],
+                          size: "sm",
+                          rounded: true
+                        ) %>
+                      <% end %>
+                    </div>
+
+                    <div class="min-w-0 grow">
+                      <p class="text-sm font-medium text-primary truncate"><%= category[:display_name] %></p>
+                      <div class="mt-1 h-1.5 rounded-full bg-surface-inset overflow-hidden">
+                        <div class="h-full rounded-full" style="width: <%= category[:percentage] %>%; background-color: <%= category[:color] %>;"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <span class="col-span-3 text-right text-sm font-medium text-primary whitespace-nowrap privacy-sensitive">
+                  <%= category[:amount].format %>
+                </span>
+
+                <span class="hidden @2xl:block @2xl:col-span-1 text-right text-sm text-secondary whitespace-nowrap privacy-sensitive">
+                  <%= number_to_percentage(category[:percentage], precision: 1, strip_insignificant_zeros: true) %>
+                </span>
+
+                <span class="col-span-2 text-right text-sm whitespace-nowrap privacy-sensitive">
+                  <% if category[:new_category] %>
+                    <%= render DS::Pill.new(
+                      label: t("analyses.show.categories.new"),
+                      tone: :info,
+                      marker: false
+                    ) %>
+                  <% elsif category[:change].nil? %>
+                    <span class="text-subdued">—</span>
+                  <% else %>
+                    <span class="font-medium <%= category[:change].positive? ? "text-destructive" : (category[:change].negative? ? "text-success" : "text-secondary") %>">
+                      <%= "+" if category[:change].positive? %><%= number_to_percentage(category[:change], precision: 1, strip_insignificant_zeros: true) %>
+                    </span>
+                  <% end %>
+                  <span class="sr-only">
+                    <%= t("analyses.show.categories.previous_amount", amount: category[:previous_amount].format) %>
+                  </span>
+                </span>
+              <% end %>
+
+              <% row_classes = class_names(
+                "grid grid-cols-12 gap-2 items-center py-3",
+                "border-b border-divider" => index < analysis.expense_categories.length - 1
+              ) %>
+
+              <% if category[:clickable] %>
+                <%= link_to transactions_path(q: {
+                  categories: [ category[:name] ],
+                  status: [ "confirmed" ],
+                  start_date: analysis.period.start_date,
+                  end_date: analysis.period.end_date
+                }),
+                  class: class_names(row_classes, "rounded-lg hover:bg-container-inset-hover transition-colors focus-ring"),
+                  aria: { label: t("analyses.show.categories.open_transactions", category: category[:display_name]) },
+                  data: {
+                    turbo_frame: "_top",
+                    turbo_prefetch: false,
+                    category_id: category[:id],
+                    action: "mouseenter->donut-chart#highlightSegment mouseleave->donut-chart#unhighlightSegment"
+                  } do %>
+                  <%= category_content %>
+                <% end %>
+              <% else %>
+                <div class="<%= row_classes %>"
+                     data-category-id="<%= category[:id] %>"
+                     data-action="mouseenter->donut-chart#highlightSegment mouseleave->donut-chart#unhighlightSegment">
+                  <%= category_content %>
+                </div>
+              <% end %>
+            <% end %>
+          </div>
+        </div>
+      </div>
+    <% end %>
+  <% else %>
+    <%= render DS::EmptyState.new(
+      icon: "pie-chart",
+      title: t("analyses.show.categories.empty_title"),
+      description: t("analyses.show.categories.empty_description")
+    ) %>
+  <% end %>
+<% end %>

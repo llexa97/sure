@@ -4,7 +4,8 @@ class AnalysesController < ApplicationController
       family: Current.family,
       user: Current.user,
       period_type: params[:period_type],
-      anchor_date: params[:anchor_date]
+      anchor_date: params[:anchor_date],
+      cashflow_year: params[:cashflow_year]
     )
 
     @breadcrumbs = [

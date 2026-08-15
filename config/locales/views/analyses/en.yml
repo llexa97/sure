@@ -6,6 +6,8 @@ en:
         amount: Amount
         category: Category
         change: Change
+        detailed_description: Refunds are deducted to compare the real net cost of the subcategories under “%{category}”.
+        detailed_title: Net expenses by subcategory
         description: Refunds are deducted to show the real net cost of each category.
         empty_description: Add or categorize transactions to see your spending breakdown.
         empty_title: No expenses in this period
@@ -15,20 +17,52 @@ en:
         share: Share
         title: Net expenses by category
         total: Total net expenses
+        without_subcategory: Without a subcategory
       chart:
-        aria_label: Chart comparing income and expenses over the selected period
+        annual_net: "Annual balance: %{amount}"
+        aria_label: Annual chart comparing checking-account income and expenses in %{year}
         day_range: "%{from}–%{to}"
-        description: Compare money coming in and going out throughout the selected period.
-        empty_description: Add transactions or connect an account to visualize your cash flow.
+        description:
+          one: Monthly total for your checking account, excluding internal transfers and pending transactions.
+          other: Combined monthly total for your %{count} checking accounts, excluding internal transfers and pending transactions.
+        empty_description: No confirmed checking-account cash flow is available for this year.
         empty_title: No cash flow to display
         expense: Expenses
+        included_accounts: Included checking accounts
         income: Income
+        next_year: Next year
         partial_period: Data through %{date} for the current period.
         period: Period
-        table_caption: Detailed values for the income and expense chart
-        title: Income and expenses
+        previous_year: Previous year
+        table_caption: Monthly income and expense values for %{year}
+        title: Annual income and expenses
+      accounts:
+        account: Checking account
+        description: Compare each checking account’s contribution to your %{year} cash flow.
+        empty_description: Add or link a checking account to display this analysis.
+        empty_title: No checking accounts to analyze
+        expenses: Expenses
+        income: Income
+        net: Balance
+        open_transactions: View transactions for %{account}
+        title: Annual cash flow by checking account
+        total_expense: Annual expenses
+      cumulative:
+        aria_label: Cumulative income minus expenses in %{year}
+        current: Balance since January
+        description: Monthly cumulative income minus expenses across checking accounts in %{year}.
+        empty_description: Confirmed cash flow will appear here when available.
+        empty_title: No cumulative balance to display
+        title: Cumulative cash-flow balance
       current_period: Current
       date_range: "%{start_date} to %{end_date}"
+      highlights:
+        description: Key measures calculated from checking accounts in %{year}.
+        highest_account: Highest-spending account
+        highest_month: Highest-spending month
+        monthly_average: Average monthly expense
+        title: Annual highlights
+        year_over_year: Change from %{year}
       next_period: Next period
       period_aria_label: Analysis level
       period_labels:
@@ -38,7 +72,7 @@ en:
         quarterly: Quarter
         yearly: Year
       previous_period: Previous period
-      subtitle: Visualize, compare, and explore your income and different expenses.
+      subtitle: Analyze annual cash flow, checking accounts, and detailed expenses.
       summary:
         expense: Expenses
         income: Income

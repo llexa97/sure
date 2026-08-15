@@ -1,0 +1,110 @@
+<%# locals: (analysis:) %>
+
+<%= render DS::Card.new(class: "gap-5", aria: { labelledby: "account-breakdown-title" }) do %>
+  <div class="flex flex-col gap-3 @lg:flex-row @lg:items-start @lg:justify-between">
+    <div>
+      <h2 id="account-breakdown-title" class="text-lg font-medium text-primary"><%= t("analyses.show.accounts.title") %></h2>
+      <p class="mt-1 text-sm text-secondary"><%= t("analyses.show.accounts.description", year: analysis.cashflow_year) %></p>
+    </div>
+    <div class="sm:text-right shrink-0">
+      <p class="text-xs text-secondary"><%= t("analyses.show.accounts.total_expense") %></p>
+      <p class="mt-1 text-xl font-semibold text-primary privacy-sensitive"><%= analysis.annual_summary[:expense].format %></p>
+    </div>
+  </div>
+
+  <% if analysis.annual_account_breakdown.any? %>
+    <%= tag.div(
+      class: "grid grid-cols-1 @4xl:grid-cols-3 gap-8 items-center",
+      data: {
+        controller: "donut-chart",
+        donut_chart_segments_value: analysis.annual_account_segments.to_json,
+        donut_chart_segment_opacity_value: 0.9,
+        donut_chart_extended_hover_value: true,
+        donut_chart_hover_extension_value: 3
+      }
+    ) do %>
+      <div class="w-full max-w-64 mx-auto">
+        <div class="h-64 relative">
+          <div data-donut-chart-target="chartContainer" class="absolute inset-0 pointer-events-none"></div>
+
+          <div data-donut-chart-target="contentContainer" class="flex justify-center items-center h-full">
+            <div data-donut-chart-target="defaultContent" class="flex flex-col items-center text-center">
+              <span class="text-sm text-secondary"><%= t("analyses.show.accounts.expenses") %></span>
+              <span data-donut-chart-target="amount" class="mt-2 text-3xl font-medium text-primary privacy-sensitive whitespace-nowrap">
+                <%= analysis.annual_summary[:expense].format %>
+              </span>
+            </div>
+
+            <% analysis.annual_account_breakdown.each do |account| %>
+              <div id="segment_<%= account[:id] %>" class="hidden text-center">
+                <p class="max-w-40 truncate text-sm text-secondary"><%= account[:name] %></p>
+                <p data-donut-chart-target="amount" class="mt-2 text-3xl font-medium text-primary privacy-sensitive whitespace-nowrap">
+                  <%= account[:expense].format %>
+                </p>
+                <p class="mt-1 text-sm text-secondary privacy-sensitive"><%= number_to_percentage(account[:percentage], precision: 1, strip_insignificant_zeros: true) %></p>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      </div>
+
+      <div class="@4xl:col-span-2 bg-container-inset rounded-xl p-1 overflow-x-auto">
+        <div class="min-w-full">
+          <div class="grid grid-cols-12 gap-2 px-3 py-2 uppercase text-xs font-medium text-secondary">
+            <span class="col-span-5 @2xl:col-span-4"><%= t("analyses.show.accounts.account") %></span>
+            <span class="hidden @2xl:block @2xl:col-span-2 text-right"><%= t("analyses.show.accounts.income") %></span>
+            <span class="col-span-3 text-right"><%= t("analyses.show.accounts.expenses") %></span>
+            <span class="col-span-4 @2xl:col-span-3 text-right"><%= t("analyses.show.accounts.net") %></span>
+          </div>
+
+          <div class="rounded-lg shadow-border-xs bg-container px-3">
+            <% analysis.annual_account_breakdown.each_with_index do |account, index| %>
+              <%= link_to transactions_path(q: {
+                account_ids: [ account[:id] ],
+                status: [ "confirmed" ],
+                start_date: analysis.annual_period.start_date,
+                end_date: analysis.annual_period.end_date
+              }),
+                class: class_names(
+                  "grid grid-cols-12 gap-2 items-center py-3 rounded-lg hover:bg-container-inset-hover transition-colors focus-ring",
+                  "border-b border-divider" => index < analysis.annual_account_breakdown.length - 1
+                ),
+                aria: { label: t("analyses.show.accounts.open_transactions", account: account[:name]) },
+                data: {
+                  turbo_frame: "_top",
+                  turbo_prefetch: false,
+                  category_id: account[:id],
+                  action: "mouseenter->donut-chart#highlightSegment mouseleave->donut-chart#unhighlightSegment"
+                } do %>
+                <div class="col-span-5 @2xl:col-span-4 min-w-0">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <span class="h-8 w-8 shrink-0 rounded-full flex items-center justify-center"
+                          style="background-color: color-mix(in oklab, <%= account[:color] %> 10%, transparent); color: <%= account[:color] %>;">
+                      <%= icon("landmark", color: "current", size: "sm") %>
+                    </span>
+                    <div class="min-w-0 grow">
+                      <p class="text-sm font-medium text-primary truncate"><%= account[:name] %></p>
+                      <div class="mt-1 h-1.5 rounded-full bg-surface-inset overflow-hidden">
+                        <div class="h-full rounded-full" style="width: <%= account[:percentage] %>%; background-color: <%= account[:color] %>;"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <span class="hidden @2xl:block @2xl:col-span-2 text-right text-sm text-success whitespace-nowrap privacy-sensitive"><%= account[:income].format %></span>
+                <span class="col-span-3 text-right text-sm font-medium text-primary whitespace-nowrap privacy-sensitive"><%= account[:expense].format %></span>
+                <span class="col-span-4 @2xl:col-span-3 text-right text-sm font-medium whitespace-nowrap privacy-sensitive <%= account[:net].negative? ? "text-destructive" : "text-success" %>"><%= account[:net].format %></span>
+              <% end %>
+            <% end %>
+          </div>
+        </div>
+      </div>
+    <% end %>
+  <% else %>
+    <%= render DS::EmptyState.new(
+      icon: "landmark",
+      title: t("analyses.show.accounts.empty_title"),
+      description: t("analyses.show.accounts.empty_description")
+    ) %>
+  <% end %>
+<% end %>

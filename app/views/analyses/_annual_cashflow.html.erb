@@ -1,0 +1,117 @@
+<%# locals: (analysis:) %>
+
+<%= render DS::Card.new(class: "gap-5", aria: { labelledby: "annual-cashflow-chart-title" }) do %>
+  <div class="flex flex-col gap-4 @lg:flex-row @lg:items-start @lg:justify-between">
+    <div>
+      <div class="flex flex-wrap items-center gap-2">
+        <h2 id="annual-cashflow-chart-title" class="text-lg font-medium text-primary"><%= t("analyses.show.chart.title") %></h2>
+        <%= render DS::Pill.new(label: analysis.cashflow_year.to_s, tone: :neutral, marker: false) %>
+      </div>
+      <p class="mt-1 text-sm text-secondary"><%= t("analyses.show.chart.description", count: analysis.checking_accounts.size) %></p>
+    </div>
+
+    <div class="flex items-center gap-2 shrink-0">
+      <%= render DS::Link.new(
+        variant: "icon",
+        icon: "chevron-left",
+        href: analysis_path(
+          period_type: analysis.period_type,
+          anchor_date: analysis.anchor_date.iso8601,
+          cashflow_year: analysis.previous_cashflow_year
+        ),
+        aria: { label: t("analyses.show.chart.previous_year") }
+      ) %>
+      <% if analysis.latest_cashflow_year? %>
+        <%= render DS::Button.new(
+          variant: "icon",
+          icon: "chevron-right",
+          disabled: true,
+          aria: { label: t("analyses.show.chart.next_year") }
+        ) %>
+      <% else %>
+        <%= render DS::Link.new(
+          variant: "icon",
+          icon: "chevron-right",
+          href: analysis_path(
+            period_type: analysis.period_type,
+            anchor_date: analysis.anchor_date.iso8601,
+            cashflow_year: analysis.next_cashflow_year
+          ),
+          aria: { label: t("analyses.show.chart.next_year") }
+        ) %>
+      <% end %>
+    </div>
+  </div>
+
+  <% if analysis.checking_accounts.any? %>
+    <div class="flex flex-wrap items-center gap-2" aria-label="<%= t("analyses.show.chart.included_accounts") %>">
+      <% analysis.checking_accounts.each do |account| %>
+        <%= render DS::Pill.new(label: account.name, tone: :neutral, marker: false) %>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if analysis.has_annual_cashflow? %>
+    <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+      <span class="flex items-center gap-1.5 text-xs text-secondary">
+        <span class="w-2.5 h-2.5 rounded-full bg-success"></span>
+        <%= t("analyses.show.chart.income") %>
+      </span>
+      <span class="flex items-center gap-1.5 text-xs text-secondary">
+        <span class="w-2.5 h-2.5 rounded-full bg-subdued"></span>
+        <%= t("analyses.show.chart.expense") %>
+      </span>
+      <span class="text-xs text-secondary privacy-sensitive">
+        <%= t("analyses.show.chart.annual_net", amount: analysis.annual_summary[:net].format) %>
+      </span>
+    </div>
+
+    <%= tag.div(
+      class: "w-full h-72 privacy-sensitive",
+      role: "img",
+      aria: { label: t("analyses.show.chart.aria_label", year: analysis.cashflow_year) },
+      data: {
+        controller: "bar-chart",
+        bar_chart_data_value: analysis.annual_bars.to_json,
+        bar_chart_currency_value: Current.family.currency,
+        bar_chart_income_label_value: t("analyses.show.chart.income"),
+        bar_chart_expense_label_value: t("analyses.show.chart.expense")
+      }
+    ) %>
+
+    <div class="sr-only">
+      <table>
+        <caption><%= t("analyses.show.chart.table_caption", year: analysis.cashflow_year) %></caption>
+        <thead>
+          <tr>
+            <th><%= t("analyses.show.chart.period") %></th>
+            <th><%= t("analyses.show.chart.income") %></th>
+            <th><%= t("analyses.show.chart.expense") %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% analysis.annual_bars.each do |bar| %>
+            <tr>
+              <td><%= bar[:label] %></td>
+              <td><%= format_money Money.new(bar[:income], Current.family.currency) %></td>
+              <td><%= format_money Money.new(bar[:expense], Current.family.currency) %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+
+    <% if analysis.annual_bars.any? { |bar| bar[:partial] } %>
+      <p class="flex items-center gap-1.5 text-xs text-secondary">
+        <%= icon("info", size: "xs") %>
+        <%= t("analyses.show.chart.partial_period", date: l(analysis.annual_period.end_date, format: :long)) %>
+      </p>
+    <% end %>
+  <% else %>
+    <%= render DS::EmptyState.new(
+      icon: "chart-line",
+      title: t("analyses.show.chart.empty_title"),
+      description: t("analyses.show.chart.empty_description")
+    ) %>
+  <% end %>
+<% end %>
