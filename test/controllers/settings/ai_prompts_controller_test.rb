@@ -54,11 +54,19 @@ class Settings::AiPromptsControllerTest < ActionDispatch::IntegrationTest
 
     get settings_ai_prompts_url
     assert_redirected_to accounts_path
+    assert_equal I18n.t("shared.require_admin"), flash[:alert]
 
     patch settings_ai_prompts_url, params: {
       family: { custom_assistant_instructions: "should not save" }
     }
     assert_redirected_to accounts_path
     assert_nil users(:family_member).family.reload.custom_assistant_instructions
+  end
+
+  test "guest cannot view family AI prompts" do
+    sign_in users(:intro_user)
+    get settings_ai_prompts_path
+    assert_redirected_to accounts_path
+    assert_equal I18n.t("shared.require_admin"), flash[:alert]
   end
 end

@@ -19,6 +19,7 @@ class DataEnrichment < ApplicationRecord
     ibkr: "ibkr",
     gocardless: "gocardless",
     powens: "powens",
-    questrade: "questrade"
+    questrade: "questrade",
+    redbark: "redbark"
   }
 end
