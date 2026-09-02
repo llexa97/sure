@@ -6,8 +6,6 @@ fr:
         amount: Montant
         category: Catégorie
         change: Évolution
-        detailed_description: Les remboursements sont déduits pour comparer le coût net réel des sous-catégories de « %{category} ».
-        detailed_title: Dépenses nettes par sous-catégorie
         description: Les remboursements sont déduits pour montrer le coût net réel de chaque catégorie.
         empty_description: Ajoutez ou catégorisez des transactions pour faire apparaître la répartition de vos dépenses.
         empty_title: Aucune dépense sur cette période
@@ -17,7 +15,6 @@ fr:
         share: Part
         title: Dépenses nettes par catégorie
         total: Total des dépenses nettes
-        without_subcategory: Sans sous-catégorie
       chart:
         account: Compte courant
         annual_net: "Solde annuel : %{amount}"

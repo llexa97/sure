@@ -4,13 +4,6 @@ module Analysis
   class Cashflow
     PERIOD_TYPES = %w[monthly quarterly yearly].freeze
     DEFAULT_PERIOD_TYPE = "monthly"
-    SPENDING_PARENT_NAMES = [
-      "Dépenses courantes",
-      "Depenses courantes",
-      "Current expenses",
-      "Everyday expenses"
-    ].freeze
-
     attr_reader :period_type, :anchor_date, :period, :previous_period, :cashflow_year
 
     def initialize(family:, user:, period_type: nil, anchor_date: nil, cashflow_year: nil)
@@ -232,23 +225,8 @@ module Analysis
       end
     end
 
-    def expense_category_parent
-      return @expense_category_parent if defined?(@expense_category_parent)
-
-      @expense_category_parent = begin
-        roots = family.categories.roots.includes(:subcategories).to_a
-        roots.find do |category|
-          normalized_spending_parent_names.include?(normalize_category_name(category.name))
-        end
-      end
-    end
-
     def expense_categories
-      @expense_categories ||= if expense_category_parent
-        build_subcategory_expense_categories(expense_category_parent)
-      else
-        build_root_expense_categories
-      end
+      @expense_categories ||= build_expense_categories
     end
 
     def expense_segments
@@ -449,48 +427,35 @@ module Analysis
           .index_by { |total| [ total.period_start, total.account_id ] }
       end
 
-      def build_subcategory_expense_categories(parent)
-        children = parent.subcategories.to_a
-        rows = children.filter_map do |category|
-          current_total = net_total_for_category(category, current_expense_totals, current_income_totals)
-          next unless current_total.positive?
+      def build_expense_categories
+        rows = family.categories.roots.includes(:subcategories).flat_map do |parent|
+          children = parent.subcategories.to_a
+          category_rows = children.filter_map do |category|
+            build_category_expense_row(category)
+          end
 
-          {
-            category: category,
-            id: category.id.to_s,
-            name: category.name,
-            display_name: category.display_name,
-            icon: category.lucide_icon,
-            current_total: current_total,
-            previous_total: net_total_for_category(category, previous_expense_totals, previous_income_totals),
-            clickable: true
-          }
+          direct_current = direct_parent_net_total(parent, children, current_expense_totals, current_income_totals)
+          if direct_current.positive?
+            category_rows << {
+              id: parent.id.to_s,
+              name: parent.name,
+              display_name: parent.display_name,
+              icon: parent.lucide_icon,
+              current_total: direct_current,
+              previous_total: direct_parent_net_total(parent, children, previous_expense_totals, previous_income_totals),
+              clickable: true
+            }
+          end
+
+          category_rows
         end
 
-        direct_current = direct_parent_net_total(parent, children, current_expense_totals, current_income_totals)
-        if direct_current.positive?
-          rows << {
-            category: parent,
-            id: "#{parent.id}-direct",
-            name: parent.name,
-            display_name: I18n.t("analyses.show.categories.without_subcategory"),
-            icon: parent.lucide_icon,
-            current_total: direct_current,
-            previous_total: direct_parent_net_total(parent, children, previous_expense_totals, previous_income_totals),
-            clickable: true
-          }
-        end
-
-        build_expense_category_rows(rows, use_analysis_palette: true)
-      end
-
-      def build_root_expense_categories
         previous_by_category = previous_net_totals.net_expense_categories.index_by do |category_total|
           category_key(category_total.category)
         end
 
-        rows = current_net_totals.net_expense_categories.filter_map do |category_total|
-          next if category_total.total.zero?
+        synthetic_rows = current_net_totals.net_expense_categories.filter_map do |category_total|
+          next unless category_total.category.synthetic?
 
           category = category_total.category
           key = category_key(category)
@@ -507,7 +472,22 @@ module Analysis
           }
         end
 
-        build_expense_category_rows(rows, use_analysis_palette: false)
+        build_expense_category_rows(rows + synthetic_rows, use_analysis_palette: true)
+      end
+
+      def build_category_expense_row(category)
+        current_total = net_total_for_category(category, current_expense_totals, current_income_totals)
+        return unless current_total.positive?
+
+        {
+          id: category.id.to_s,
+          name: category.name,
+          display_name: category.display_name,
+          icon: category.lucide_icon,
+          current_total: current_total,
+          previous_total: net_total_for_category(category, previous_expense_totals, previous_income_totals),
+          clickable: true
+        }
       end
 
       def build_expense_category_rows(rows, use_analysis_palette:)
@@ -553,14 +533,6 @@ module Analysis
           category_total.category.id == category.id
         end&.total
         (total || 0).to_d
-      end
-
-      def normalized_spending_parent_names
-        @normalized_spending_parent_names ||= SPENDING_PARENT_NAMES.map { |name| normalize_category_name(name) }
-      end
-
-      def normalize_category_name(name)
-        I18n.transliterate(name.to_s).downcase.squish
       end
 
       def palette_color(key)

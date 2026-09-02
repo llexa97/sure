@@ -95,7 +95,7 @@ class Analysis::CashflowTest < ActiveSupport::TestCase
     end
   end
 
-  test "details net expenses under Depenses courantes subcategories" do
+  test "details net expenses across root categories and subcategories" do
     travel_to Date.new(2026, 8, 15) do
       parent = @family.categories.create!(
         name: "Dépenses courantes",
@@ -129,19 +129,22 @@ class Analysis::CashflowTest < ActiveSupport::TestCase
         anchor_date: "2026-08-10"
       )
 
-      assert_equal parent, analysis.expense_category_parent
-      assert_equal 3, analysis.expense_categories.size
-      assert_not analysis.expense_categories.any? { |category| category[:id] == @category.id.to_s }
+      assert_equal 4, analysis.expense_categories.size
 
       groceries_row = analysis.expense_categories.find { |category| category[:id] == groceries.id.to_s }
       assert_equal 80, groceries_row[:amount].amount
       assert_equal 40, groceries_row[:previous_amount].amount
       assert_equal 100, groceries_row[:change]
 
-      direct_row = analysis.expense_categories.find { |category| category[:id] == "#{parent.id}-direct" }
+      direct_row = analysis.expense_categories.find { |category| category[:id] == parent.id.to_s }
       assert_equal 10, direct_row[:amount].amount
-      assert_equal I18n.t("analyses.show.categories.without_subcategory"), direct_row[:display_name]
-      assert_equal 150, analysis.expense_total.amount
+      assert_equal parent.display_name, direct_row[:display_name]
+
+      other_root_row = analysis.expense_categories.find { |category| category[:id] == @category.id.to_s }
+      assert_equal 999, other_root_row[:amount].amount
+      assert_equal @category.display_name, other_root_row[:display_name]
+
+      assert_equal 1149, analysis.expense_total.amount
       assert_operator analysis.expense_categories.map { |category| category[:color] }.uniq.size, :>, 1
     end
   end

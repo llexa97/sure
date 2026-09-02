@@ -4,14 +4,10 @@
   <div class="flex flex-col gap-3 @lg:flex-row @lg:items-start @lg:justify-between">
     <div>
       <h2 id="expense-breakdown-title" class="text-lg font-medium text-primary">
-        <%= analysis.expense_category_parent ? t("analyses.show.categories.detailed_title") : t("analyses.show.categories.title") %>
+        <%= t("analyses.show.categories.title") %>
       </h2>
       <p class="mt-1 text-sm text-secondary">
-        <% if analysis.expense_category_parent %>
-          <%= t("analyses.show.categories.detailed_description", category: analysis.expense_category_parent.display_name) %>
-        <% else %>
-          <%= t("analyses.show.categories.description") %>
-        <% end %>
+        <%= t("analyses.show.categories.description") %>
       </p>
     </div>
 

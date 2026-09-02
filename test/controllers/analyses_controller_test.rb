@@ -43,7 +43,7 @@ class AnalysesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-controller='bar-chart'][data-bar-chart-stacked-value='true']", count: 1
     assert_select "[data-controller='time-series-chart']", count: 1
     assert_select "[data-controller='donut-chart']", count: 2
-    assert_select "#expense-breakdown-title", text: I18n.t("analyses.show.categories.detailed_title")
+    assert_select "#expense-breakdown-title", text: I18n.t("analyses.show.categories.title")
     assert_select "[data-category-id=?]", @category.id.to_s, minimum: 1
     assert_select "#annual-highlights-title", text: I18n.t("analyses.show.highlights.title")
     assert_select "#account-breakdown-title", text: I18n.t("analyses.show.accounts.title")

@@ -6,8 +6,6 @@ en:
         amount: Amount
         category: Category
         change: Change
-        detailed_description: Refunds are deducted to compare the real net cost of the subcategories under “%{category}”.
-        detailed_title: Net expenses by subcategory
         description: Refunds are deducted to show the real net cost of each category.
         empty_description: Add or categorize transactions to see your spending breakdown.
         empty_title: No expenses in this period
@@ -17,7 +15,6 @@ en:
         share: Share
         title: Net expenses by category
         total: Total net expenses
-        without_subcategory: Without a subcategory
       chart:
         account: Checking account
         annual_net: "Annual balance: %{amount}"
