@@ -4,17 +4,20 @@ class RecurringAllocationsController < ApplicationController
   before_action :ensure_recurring_enabled
 
   def create
-    occurrence = find_occurrence(params[:recurring_occurrence_id])
-    ensure_series_writable(occurrence)
-    entry = find_entry(occurrence, params[:entry_id])
+    RecurringAllocation.transaction do
+      occurrence = find_occurrence(params[:recurring_occurrence_id])
+      ensure_series_writable(occurrence)
+      entry = find_entry(occurrence, params[:entry_id])
+      occurrence = occurrence_for_entry_date(occurrence, entry) if entry
 
-    RecurringTransaction::Allocator.new(occurrence).allocate!(
-      entry: entry,
-      amount: params[:amount].presence,
-      # Defaults to today via RecurringAllocation's callback; accepting a date
-      # lets someone record last Tuesday's payment as last Tuesday.
-      paid_on: parse_paid_on(params[:paid_on])
-    )
+      RecurringTransaction::Allocator.new(occurrence).allocate!(
+        entry: entry,
+        amount: params[:amount].presence,
+        # Defaults to the linked entry's date via RecurringAllocation's callback;
+        # accepting a date also lets someone backdate an entry-less payment.
+        paid_on: parse_paid_on(params[:paid_on])
+      )
+    end
 
     redirect_with notice: t(".success")
   rescue RecurringTransaction::Allocator::OverAllocationError,
@@ -109,6 +112,36 @@ class RecurringAllocationsController < ApplicationController
       return nil if entry_id.blank?
 
       Current.accessible_entries.find(entry_id)
+    end
+
+    # Search deliberately lets someone find an old bank transaction while
+    # looking at the current bill. The selected occurrence therefore cannot be
+    # trusted as the transaction's cycle: choose the nearest scheduled date and
+    # materialize that historical occurrence when necessary. Otherwise a July
+    # payment selected from October's drawer settles October and inflates its
+    # totals, because Bills reports allocations by occurrence due date.
+    def occurrence_for_entry_date(occurrence, entry)
+      series = occurrence.recurring_transaction
+      schedule = series.schedule
+      cycle_days = [ (365.25 / schedule.occurrences_per_year).ceil, 1 ].max
+      pair = schedule
+        .occurrence_pairs_between(entry.date - cycle_days, entry.date + cycle_days)
+        .min_by { |candidate| (candidate.due_on - entry.date).abs }
+
+      return occurrence unless pair
+      return occurrence unless (pair.due_on - entry.date).abs < (occurrence.due_on - entry.date).abs
+
+      target = series.recurring_occurrences.find_by(original_due_on: pair.original_due_on)
+      return target if target
+      return occurrence unless series.active?
+      return occurrence if series.manual? && series.anchor_date.present? && pair.original_due_on < series.anchor_date
+
+      RecurringTransaction::OccurrenceGenerator.new(series).backfill!(
+        from: pair.due_on,
+        through: pair.due_on
+      )
+
+      series.recurring_occurrences.find_by(original_due_on: pair.original_due_on) || occurrence
     end
 
     def allocation_error_message(error)

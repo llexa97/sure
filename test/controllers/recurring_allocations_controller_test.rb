@@ -79,6 +79,32 @@ class RecurringAllocationsControllerTest < ActionDispatch::IntegrationTest
     assert_equal paid, @occurrence.reload.allocations.sole.paid_on
   end
 
+  test "an old bank transaction settles its historical cycle instead of the requested future cycle" do
+    travel_to Date.new(2026, 9, 2) do
+      series = @family.recurring_transactions.create!(
+        name: "Historical Card Fee", account: accounts(:credit_card), amount: 95,
+        currency: "USD", expected_day_of_month: 1, anchor_date: Date.new(2026, 7, 1),
+        last_occurrence_date: Date.new(2026, 9, 1), next_expected_date: Date.new(2026, 10, 1),
+        status: "active", manual: false, dedup_scope: "historical-card-fee"
+      )
+      requested = series.recurring_occurrences.find_by!(due_on: Date.new(2026, 10, 1))
+      entry = accounts(:credit_card).entries.create!(
+        date: Date.new(2026, 7, 1), amount: 95, currency: "USD",
+        name: "Historical Card Fee", entryable: Transaction.new
+      )
+
+      post recurring_occurrence_allocations_url(requested), params: { entry_id: entry.id }
+
+      assert_redirected_to bills_url
+      historical = series.recurring_occurrences.find_by!(due_on: Date.new(2026, 7, 1))
+      assert historical.paid?
+      assert_equal entry, historical.allocations.sole.entry
+      assert_equal entry.date, historical.allocations.sole.paid_on
+      assert_empty requested.reload.allocations
+      assert requested.scheduled?
+    end
+  end
+
   test "a malformed paid_on is rejected instead of being recorded as today" do
     post recurring_occurrence_allocations_url(@occurrence),
          params: { amount: "5.00", paid_on: "not-a-date" }
