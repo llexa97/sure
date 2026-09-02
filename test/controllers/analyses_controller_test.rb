@@ -106,6 +106,14 @@ class AnalysesControllerTest < ActionDispatch::IntegrationTest
 
   test "show handles invalid and future parameters" do
     travel_to Date.new(2026, 8, 15) do
+      create_transaction(
+        account: accounts(:depository),
+        date: Date.new(2026, 8, 10),
+        amount: 12,
+        category: @category,
+        name: "Invalid parameter analysis expense"
+      )
+
       get analysis_path(period_type: "invalid", anchor_date: "2030-01-01", cashflow_year: "2030")
 
       assert_response :ok
