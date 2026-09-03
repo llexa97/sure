@@ -899,6 +899,29 @@ class GoalTest < ActiveSupport::TestCase
     assert_equal BigDecimal("10000"), goal.market_value_money.amount
   end
 
+  test "crypto contributions ignore provider balance-history adjustments" do
+    account = Account.create!(family: @family, accountable: Crypto.new, name: "Kraken", currency: "USD", balance: 457.3414)
+    account.balances.create!(
+      date: 2.days.ago.to_date,
+      balance: 0.002,
+      currency: "USD",
+      cash_adjustments: -530.648
+    )
+    account.balances.create!(
+      date: Date.current,
+      balance: 457.3414,
+      currency: "USD",
+      net_market_flows: 457.3394
+    )
+    goal = @family.goals.create!(name: "Kraken goal", target_amount: 20_000, currency: "USD") do |g|
+      g.goal_accounts.build(account: account)
+    end
+
+    assert_equal "contributions", goal.progress_basis
+    assert_equal BigDecimal("530.65"), goal.current_balance.to_d
+    assert_equal BigDecimal("457.3414"), goal.market_value_money.amount
+  end
+
   test "reopen transitions a completed goal back to active" do
     fresh = goals(:emergency_fund)
     fresh.complete!

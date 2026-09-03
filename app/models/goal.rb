@@ -257,6 +257,23 @@ class Goal < ApplicationRecord
 
   attr_writer :market_flows
 
+  # Family-wide map of balance-history corrections per account. A provider can
+  # add today's holdings without historical positions; the balance engine then
+  # writes a cash adjustment to reconcile the old anchor with the first known
+  # holding. That is neither a contribution nor a market return, so it must be
+  # removed from contributions-basis progress alongside net_market_flows.
+  def self.balance_adjustments_for(family)
+    account_ids = GoalAccount.joins(:goal).where(goals: { family_id: family.id }).distinct.pluck(:account_id)
+    return {} if account_ids.empty?
+
+    Balance
+      .where(account_id: account_ids)
+      .group(:account_id)
+      .sum(Arel.sql("COALESCE(cash_adjustments, 0) + COALESCE(non_cash_adjustments, 0)"))
+  end
+
+  attr_writer :balance_adjustments
+
   # Family-wide map of each linked account's net inflow over the trailing
   # 90 days (account_id => net Entry#amount sum) — the same aggregate #pace
   # computes per goal. Injected alongside pooled_allocations/market_flows so
@@ -279,9 +296,9 @@ class Goal < ApplicationRecord
   attr_writer :pooled_pace
 
   # Goals loaded ready to render: association preloads for the card/row
-  # partials plus the family-wide pooled-allocations + market-flows injection
-  # so the per-goal backing math doesn't fire a query per row (N+1). Pass a
-  # narrower scope to limit which of the family's goals are loaded.
+  # partials plus the family-wide backing-math injections so the per-goal
+  # calculations don't fire a query per row (N+1). Pass a narrower scope to
+  # limit which of the family's goals are loaded.
   def self.prepared_for(family, scope: family.goals)
     goals = scope.alphabetically
                  .includes(:open_pledges, :goal_accounts, linked_accounts: :account_providers)
@@ -290,16 +307,17 @@ class Goal < ApplicationRecord
     goals
   end
 
-  # One family-wide earmark-pool + market-flows + pace read shared across
-  # every goal in the list (see pooled_allocations_for / market_flows_for /
-  # pace_for).
+  # One family-wide earmark-pool + market-flows + balance-adjustments + pace
+  # read shared across every goal in the list.
   def self.inject_backing_math!(goals, family)
     pooled = pooled_allocations_for(family)
     flows = market_flows_for(family)
+    adjustments = balance_adjustments_for(family)
     pace_map = pace_for(family)
     goals.each do |goal|
       goal.pooled_allocations = pooled
       goal.market_flows = flows
+      goal.balance_adjustments = adjustments
       goal.pooled_pace = pace_map
     end
   end
@@ -1066,13 +1084,18 @@ class Goal < ApplicationRecord
       backing_share_for(account, base)
     end
 
-    # Net contributions into `account` to date = current value minus cumulative
-    # market gain/loss (sum of balances.net_market_flows), floored at 0.
-    # Depository accounts have zero net_market_flows, so this equals their
-    # balance. The per-account base on the contributions basis.
+    # Net contributions into a market account to date = current value minus
+    # cumulative market gain/loss and balance-history corrections, floored at
+    # zero. The correction term matters when a provider supplies today's
+    # holdings without historical positions: the balance engine reconciles the
+    # gap with an adjustment, which must not erase the opening capital from a
+    # goal. Depository accounts keep their live balance on mixed-account goals.
     def net_contributed_for(account)
+      return account.balance.to_d unless CONTRIBUTIONS_ACCOUNT_TYPES.include?(account.accountable_type)
+
       market_gain = (market_flows[account.id] || 0).to_d
-      [ account.balance.to_d - market_gain, 0.to_d ].max
+      adjustment = (balance_adjustments[account.id] || 0).to_d
+      [ account.balance.to_d - market_gain - adjustment, 0.to_d ].max
     end
 
     # This goal's share of one linked account given a per-account `base` amount
@@ -1122,6 +1145,10 @@ class Goal < ApplicationRecord
 
     def market_flows
       @market_flows ||= self.class.market_flows_for(family)
+    end
+
+    def balance_adjustments
+      @balance_adjustments ||= self.class.balance_adjustments_for(family)
     end
 
     def pooled_pace
