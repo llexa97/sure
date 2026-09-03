@@ -231,11 +231,21 @@ class Holding < ApplicationRecord
 
       # Reset ALL holdings that were remapped from this provider_security
       account.holdings.where(security: current_security, provider_security: original_security).find_each do |holding|
-        holding.update!(
+        existing = account.holdings.find_by(
           security: original_security,
-          security_locked: false,
-          provider_security_id: nil
+          date: holding.date,
+          currency: holding.currency
         )
+
+        if existing
+          reset_holding_with_collision!(holding, existing, original_security)
+        else
+          holding.update!(
+            security: original_security,
+            security_locked: false,
+            provider_security_id: nil
+          )
+        end
       end
     end
 
@@ -256,6 +266,60 @@ class Holding < ApplicationRecord
   end
 
   private
+    # A provider snapshot can collide with a calculated row left on the original
+    # security while the snapshot is remapped. In that case the provider row is
+    # authoritative and must replace (not add to) the calculated row. Two actual
+    # holdings still merge additively, matching remap_security! behavior.
+    def reset_holding_with_collision!(holding, existing, original_security)
+      provider_replaces_calculated = holding.account_provider_id.present? && existing.account_provider_id.blank?
+
+      reset_attrs = if provider_replaces_calculated
+        preferred_cost_basis = [ holding, existing ].max_by do |candidate|
+          [
+            candidate.cost_basis_locked? ? 1 : 0,
+            COST_BASIS_SOURCE_PRIORITY[candidate.cost_basis_source] || 0,
+            candidate.cost_basis.present? ? 1 : 0
+          ]
+        end
+
+        {
+          cost_basis: preferred_cost_basis.cost_basis,
+          cost_basis_source: preferred_cost_basis.cost_basis_source,
+          cost_basis_locked: preferred_cost_basis.cost_basis_locked
+        }
+      else
+        merged_qty = existing.qty + holding.qty
+        merged_amount = existing.amount + holding.amount
+        merged_cost_basis = if existing.cost_basis.present? && holding.cost_basis.present? && merged_qty.positive?
+          ((existing.cost_basis * existing.qty) + (holding.cost_basis * holding.qty)) / merged_qty
+        else
+          existing.cost_basis
+        end
+
+        {
+          qty: merged_qty,
+          amount: merged_amount,
+          price: merged_qty.positive? ? merged_amount / merged_qty : 0,
+          cost_basis: merged_cost_basis,
+          cost_basis_source: existing.cost_basis_source,
+          cost_basis_locked: existing.cost_basis_locked,
+          external_id: holding.external_id.presence || existing.external_id,
+          account_provider_id: holding.account_provider_id || existing.account_provider_id
+        }
+      end
+
+      # Delete first so the unique composite key no longer blocks restoring the
+      # provider-backed holding. The surrounding transaction rolls this back if
+      # the update fails.
+      existing.destroy!
+      holding.update!(
+        **reset_attrs,
+        security: original_security,
+        security_locked: false,
+        provider_security_id: nil
+      )
+    end
+
     def amount_in_account_currency
       return amount if currency == account.currency
 

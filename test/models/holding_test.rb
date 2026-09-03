@@ -413,6 +413,46 @@ class HoldingTest < ActiveSupport::TestCase
     assert_equal 1, @account.trades.where(security: old_security).count
   end
 
+  test "reset_security_to_provider! replaces a colliding calculated holding with the provider snapshot" do
+    provider_security = @amzn.security
+    remapped_security = create_security("GOOG", prices: [ { date: Date.current, price: 100.00 } ])
+    provider_qty = @amzn.qty
+    provider_amount = @amzn.amount
+
+    coinstats_item = families(:empty).coinstats_items.create!(name: "CoinStats", api_key: "test-key")
+    coinstats_account = coinstats_item.coinstats_accounts.create!(name: "Brokerage", currency: "USD")
+    account_provider = AccountProvider.create!(account: @account, provider: coinstats_account)
+
+    @amzn.update!(account_provider: account_provider, external_id: "provider-amzn")
+    @amzn.remap_security!(remapped_security)
+
+    calculated_holding = @account.holdings.create!(
+      security: provider_security,
+      date: @amzn.date,
+      currency: @amzn.currency,
+      qty: 0,
+      price: 215,
+      amount: 0,
+      cost_basis: 210,
+      cost_basis_source: "calculated"
+    )
+
+    @amzn.reset_security_to_provider!
+
+    @amzn.reload
+    assert_equal provider_security, @amzn.security
+    assert_equal Money.new(216, "USD"), @amzn.security.current_price
+    assert_equal provider_qty, @amzn.qty
+    assert_equal provider_amount, @amzn.amount
+    assert_equal BigDecimal("210"), @amzn.cost_basis
+    assert_equal "calculated", @amzn.cost_basis_source
+    assert_equal account_provider, @amzn.account_provider
+    assert_equal "provider-amzn", @amzn.external_id
+    assert_not @amzn.security_locked?
+    assert_nil @amzn.provider_security_id
+    assert_not Holding.exists?(calculated_holding.id)
+  end
+
   test "reset_security_to_provider! does nothing if not remapped" do
     old_security = @amzn.security
     @amzn.reset_security_to_provider!
