@@ -271,9 +271,11 @@ zh-TW:
         earmark_for: 為 %{account} 指定金額
         earmark_hint: 把金額留白，就會把該帳戶的全部餘額都投入這個目標。
       subtypes:
-        checking: 支票帳戶 (Checking)
-        savings: 儲蓄帳戶 (Savings)
-        hsa: 健康儲蓄帳戶 (HSA)
         cd: 定期存款 (CD)
+        checking: 支票帳戶 (Checking)
+        exchange: 加密貨幣交易所
+        hsa: 健康儲蓄帳戶 (HSA)
         money_market: 貨幣市場帳戶
         other: 其他
+        savings: 儲蓄帳戶 (Savings)
+        wallet: 加密貨幣錢包

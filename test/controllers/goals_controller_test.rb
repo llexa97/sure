@@ -44,6 +44,16 @@ class GoalsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
+  test "new form includes crypto accounts" do
+    crypto = accounts(:crypto)
+
+    get new_goal_url
+
+    assert_response :success
+    assert_match crypto.name, response.body
+    assert_select "input[type=checkbox][name='goal[account_ids][]'][value=?]", crypto.id
+  end
+
   test "create persists a goal with linked accounts" do
     # Fresh accounts: the goal fixtures already claim @depository and
     # @connected in full, and GoalAccount refuses a second whole-balance
@@ -67,6 +77,28 @@ class GoalsControllerTest < ActionDispatch::IntegrationTest
 
     goal = Goal.order(created_at: :desc).first
     assert_redirected_to goal_path(goal)
+  end
+
+  test "create persists a goal funded by a crypto account" do
+    crypto = accounts(:crypto)
+
+    assert_difference -> { Goal.count } => 1,
+                      -> { GoalAccount.count } => 1 do
+      post goals_url, params: {
+        goal: {
+          name: "Long-term crypto goal",
+          target_amount: "100000",
+          target_date: 10.years.from_now.to_date.iso8601,
+          color: "#4da568",
+          account_ids: [ crypto.id ]
+        }
+      }
+    end
+
+    goal = Goal.order(created_at: :desc).first
+    assert_redirected_to goal_path(goal)
+    assert_equal [ crypto.id ], goal.linked_account_ids
+    assert_equal "contributions", goal.progress_basis
   end
 
   test "create rejects missing account_ids" do

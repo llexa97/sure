@@ -338,8 +338,10 @@ en:
         earmark_hint: Leave an amount blank to dedicate that account's whole balance.
       subtypes:
         checking: Checking
-        savings: Savings
-        hsa: HSA
         cd: CD
+        exchange: Crypto exchange
+        hsa: HSA
         money_market: Money market
         other: Other
+        savings: Savings
+        wallet: Crypto wallet

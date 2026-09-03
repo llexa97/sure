@@ -273,8 +273,10 @@ es:
         earmark_hint: Deja un importe en blanco para dedicar todo el saldo de esa cuenta.
       subtypes:
         checking: Corriente
-        savings: Ahorro
-        hsa: HSA
         cd: Depósito a plazo
+        exchange: Plataforma de criptomonedas
+        hsa: HSA
         money_market: Mercado monetario
         other: Otra
+        savings: Ahorro
+        wallet: Billetera de criptomonedas

@@ -52,10 +52,12 @@ ru:
       subtypes:
         cd: Срочный вклад
         checking: Расчётный счёт
+        exchange: Криптобиржа
         hsa: Медицинский сберегательный счёт
         money_market: Накопительный счёт
         other: Другое
         savings: Сберегательный счёт
+        wallet: Криптокошелёк
       suggested_no_date: Укажите дату, чтобы рассчитать срок достижения.
       suggested_with_date: Откладывайте {monthly}/мес. на {accounts}, чтобы уложиться в срок.
     goal_card:

@@ -55,10 +55,12 @@ tr:
       subtypes:
         cd: CD
         checking: Vadesiz hesap
+        exchange: Kripto borsası
         hsa: HSA
         money_market: Para piyasası
         other: Diğer
         savings: Tasarruf
+        wallet: Kripto cüzdanı
       suggested_no_date: Bitiş tarihini öngörmek için bir hedef tarihi belirleyin.
       suggested_with_date: Zamanında ulaşmak için {accounts} hesaplarında ayda {monthly}
         biriktirin.

@@ -52,10 +52,12 @@ de:
       subtypes:
         cd: Festgeld
         checking: Girokonto
+        exchange: Kryptobörse
         hsa: HSA
         money_market: Geldmarkt
         other: Sonstiges
         savings: Sparkonto
+        wallet: Krypto-Wallet
       suggested_no_date: Setz eine Frist, um ein Zieldatum hochzurechnen.
       suggested_with_date: Spar {monthly}/Monat über {accounts}, um es rechtzeitig zu schaffen.
     goal_card:

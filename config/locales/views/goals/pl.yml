@@ -292,8 +292,10 @@ pl:
         earmark_hint: Pozostaw kwotę pustą, aby przeznaczyć całe saldo konta.
       subtypes:
         checking: Czekowe
-        savings: Oszczędnościowe
-        hsa: HSA
         cd: CD
+        exchange: Giełda kryptowalut
+        hsa: HSA
         money_market: Rynek pieniężny
         other: Inne
+        savings: Oszczędnościowe
+        wallet: Portfel kryptowalut

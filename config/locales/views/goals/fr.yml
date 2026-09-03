@@ -73,10 +73,12 @@ fr:
       subtypes:
         cd: Compte à terme
         checking: Compte courant
+        exchange: Plateforme crypto
         hsa: HSA
         money_market: Marché monétaire
         other: Autre
         savings: Épargne
+        wallet: Portefeuille crypto
       suggested_no_date: Définissez une date cible pour projeter la fin.
       suggested_with_date: Épargnez {monthly}/mois sur {accounts} pour l'atteindre à temps.
     goal_card:

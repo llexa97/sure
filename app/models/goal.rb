@@ -36,7 +36,7 @@ class Goal < ApplicationRecord
   validates :currency, presence: true
   # before_save (not before_validation) so it only mutates on persistence, not
   # on every valid? call — a goal can be inspected without its basis flipping.
-  before_save :default_progress_basis_for_investment
+  before_save :default_progress_basis_for_market_account
   # A reserve measured in months is derived, not typed: computing it only in
   # the monthly job would leave a brand-new one wrong until the 1st, so the
   # feature's first impression would be its least convincing moment. Fired on
@@ -98,7 +98,8 @@ class Goal < ApplicationRecord
   monetize :target_amount
 
   # Account types that can back a goal (see linked_accounts_must_be_fundable).
-  FUNDABLE_ACCOUNT_TYPES = %w[Depository Investment].freeze
+  FUNDABLE_ACCOUNT_TYPES = %w[Depository Investment Crypto].freeze
+  CONTRIBUTIONS_ACCOUNT_TYPES = %w[Investment Crypto].freeze
 
   # States in which a goal has let go of the money it was holding, and so
   # drops out of the shared pool. `completed` belongs here: reaching a goal
@@ -531,7 +532,7 @@ class Goal < ApplicationRecord
 
   # Market value of the goal's backing (balance basis), regardless of the
   # progress basis — the "what it's worth today" figure shown next to
-  # contributions on an investment-backed goal.
+  # contributions on an investment- or crypto-backed goal.
   def market_value_money
     amount = linked_accounts.select { |a| a.currency == currency }.sum { |a| backing_share_for(a, a.balance.to_d) }
     Money.new(amount, currency)
@@ -891,10 +892,11 @@ class Goal < ApplicationRecord
   end
 
   # "I just transferred" when any linked account resolves pledges via a transfer
-  # (synced accounts AND investment accounts, per default_pledge_kind); "I just
-  # saved" only for manual cash accounts. Keyed off default_pledge_kind so the
-  # copy matches the kind actually saved — a manual brokerage uses transfer, not
-  # manual_save, so it must not show the "update your manual balance" path.
+  # (synced accounts plus investment and crypto accounts, per
+  # default_pledge_kind); "I just saved" only for manual cash accounts. Keyed off
+  # default_pledge_kind so the copy matches the kind actually saved — a manual
+  # market account uses transfer, not manual_save, so it must not show the
+  # "update your manual balance" path.
   def pledge_action_label_key
     pledges_use_transfer? ? "goals.show.pledge_just_transferred" : "goals.show.pledge_just_saved"
   end
@@ -1294,18 +1296,21 @@ class Goal < ApplicationRecord
 
     def linked_accounts_must_be_fundable
       offending = goal_accounts.reject(&:marked_for_destruction?).reject do |sga|
-        sga.account&.depository? || sga.account&.investment?
+        FUNDABLE_ACCOUNT_TYPES.include?(sga.account&.accountable_type)
       end
       return if offending.empty?
 
       errors.add(:linked_accounts, :must_be_fundable)
     end
 
-    # Goals funded by an investment account default to the contributions basis
-    # (so a market swing doesn't move them); depository-only goals stay on the
-    # balance basis. Only auto-set when the basis is still the default.
-    def default_progress_basis_for_investment
-      return unless goal_accounts.any? { |ga| ga.account&.investment? }
+    # Goals funded by an investment or crypto account default to the
+    # contributions basis (so a market swing doesn't move them);
+    # depository-only goals stay on the balance basis. Only auto-set when the
+    # basis is still the default.
+    def default_progress_basis_for_market_account
+      return unless goal_accounts.reject(&:marked_for_destruction?).any? do |ga|
+        CONTRIBUTIONS_ACCOUNT_TYPES.include?(ga.account&.accountable_type)
+      end
       return unless progress_basis.blank? || progress_basis == "balance"
 
       self.progress_basis = "contributions"

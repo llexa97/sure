@@ -272,8 +272,10 @@ it:
         earmark_hint: Lascia vuoto un importo per dedicare l'intero saldo di quel conto.
       subtypes:
         checking: Conto corrente
-        savings: Risparmio
-        hsa: HSA
         cd: CD
+        exchange: Exchange di criptovalute
+        hsa: HSA
         money_market: Mercato monetario
         other: Altro
+        savings: Risparmio
+        wallet: Portafoglio di criptovalute

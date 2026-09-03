@@ -271,9 +271,11 @@ zh-CN:
         earmark_for: 为「%{account}」预留的金额
         earmark_hint: 留空则使用该账户的全部余额。
       subtypes:
-        checking: 支票账户
-        savings: 储蓄账户
-        hsa: HSA
         cd: 定期存单
+        checking: 支票账户
+        exchange: 加密货币交易所
+        hsa: HSA
         money_market: 货币市场
         other: 其他
+        savings: 储蓄账户
+        wallet: 加密货币钱包
