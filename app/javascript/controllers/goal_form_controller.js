@@ -83,15 +83,16 @@ export default class extends Controller {
     this.refreshSubmitState();
   }
 
-  // Required to create a goal: a name, a positive target amount, and at least
-  // one funding account. Mirrors the server-side Goal validations (name
-  // presence, target_amount > 0, must_have_at_least_one_linked_account) so the
-  // button only enables when a submit would actually succeed.
+  // Required to create a goal: a name, a usable target, and at least one
+  // funding account. A months-of-expenses reserve deliberately disables its
+  // amount input because the server derives that amount on save; treating the
+  // disabled, empty input as invalid made that otherwise-valid reserve
+  // impossible to submit.
   isValid() {
     const name = this.hasNameInputTarget ? this.nameInputTarget.value.trim() : "";
-    const amount = this.hasAmountInputTarget ? Number.parseFloat(this.amountInputTarget.value) : Number.NaN;
+    const amountValid = this.amountIsValid();
     const accountOk = !this.requireAccountValue || this.linkedAccountCheckboxTargets.some((cb) => cb.checked);
-    return name.length > 0 && Number.isFinite(amount) && amount > 0 && accountOk;
+    return name.length > 0 && amountValid && accountOk;
   }
 
   // `aria-disabled` instead of the `disabled` attribute: a truly disabled
@@ -116,8 +117,7 @@ export default class extends Controller {
     event.preventDefault();
 
     const nameEmpty = !(this.hasNameInputTarget && this.nameInputTarget.value.trim().length > 0);
-    const amount = this.hasAmountInputTarget ? Number.parseFloat(this.amountInputTarget.value) : Number.NaN;
-    const amountInvalid = !(Number.isFinite(amount) && amount > 0);
+    const amountInvalid = !this.amountIsValid();
     const noAccount = this.requireAccountValue && !this.linkedAccountCheckboxTargets.some((cb) => cb.checked);
 
     if (nameEmpty) {
@@ -138,6 +138,14 @@ export default class extends Controller {
           ? this.linkedAccountCheckboxTargets[0]
           : null;
     firstInvalid?.focus();
+  }
+
+  amountIsValid() {
+    if (!this.hasAmountInputTarget) return false;
+    if (this.amountInputTarget.disabled) return true;
+
+    const amount = Number.parseFloat(this.amountInputTarget.value);
+    return Number.isFinite(amount) && amount > 0;
   }
 
   // Hook for any input that influences the suggested-pace hint
