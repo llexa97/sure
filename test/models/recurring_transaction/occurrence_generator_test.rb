@@ -99,4 +99,82 @@ class RecurringTransaction::OccurrenceGeneratorTest < ActiveSupport::TestCase
       assert_equal 0, Generator.new(@series).generate!, "adjusted occurrence does not re-insert"
     end
   end
+
+  test "a detected monthly day shift does not recreate a paid historical month" do
+    travel_to Date.new(2026, 9, 5) do
+      @series.update!(expected_day_of_month: 7)
+      paid = @series.recurring_occurrences.find_by!(original_due_on: Date.new(2026, 8, 7))
+      entry = @series.account.entries.create!(
+        name: "Monthly fee", date: Date.new(2026, 8, 7), amount: @series.amount,
+        currency: @series.currency, entryable: Transaction.new
+      )
+      allocation = RecurringTransaction::Allocator.new(paid).allocate!(entry: entry)
+
+      RecurringTransaction::FrequencyPreset.apply(@series, preset: "monthly", day_of_month: 6)
+      @series.save!
+      Generator.new(@series).generate!
+      Generator.new(@series).backfill!(from: Date.new(2026, 8, 1), through: Date.new(2026, 8, 31))
+
+      august = @series.recurring_occurrences.where(original_due_on: Date.new(2026, 8, 1)..Date.new(2026, 8, 31))
+      assert_equal [ paid.id ], august.pluck(:id)
+      assert paid.reload.paid?
+      assert_equal allocation.id, paid.allocations.sole.id
+      assert_equal entry.id, allocation.reload.entry_id
+      assert @series.recurring_occurrences.exists?(original_due_on: Date.new(2026, 9, 6))
+    end
+  end
+
+  test "an implicit monthly rule preserves a partial payment when the due day shifts" do
+    travel_to Date.new(2026, 8, 13) do
+      Generator.new(@series).generate!
+      partial = @series.recurring_occurrences.find_by!(original_due_on: Date.new(2026, 9, 5))
+      RecurringTransaction::Allocator.new(partial).allocate!(amount: 5)
+
+      @series.update!(expected_day_of_month: 6)
+
+      assert partial.reload.partially_paid?
+      assert_not @series.recurring_occurrences.exists?(original_due_on: Date.new(2026, 9, 6))
+      assert @series.recurring_occurrences.exists?(original_due_on: Date.new(2026, 10, 6))
+    end
+  end
+
+  test "a skipped monthly occurrence is not recreated at a new due day" do
+    travel_to Date.new(2026, 8, 13) do
+      Generator.new(@series).generate!
+      skipped = @series.recurring_occurrences.find_by!(original_due_on: Date.new(2026, 8, 5))
+      skipped.skip!
+
+      @series.update!(expected_day_of_month: 6)
+
+      assert skipped.reload.skipped?
+      assert_not @series.recurring_occurrences.exists?(original_due_on: Date.new(2026, 8, 6))
+    end
+  end
+
+  test "two monthly rules still create the second obligation after the first is paid" do
+    travel_to Date.new(2026, 8, 13) do
+      Generator.new(@series).generate!
+      first = @series.recurring_occurrences.find_by!(original_due_on: Date.new(2026, 8, 5))
+      RecurringTransaction::Allocator.new(first).mark_paid!
+      RecurringTransaction::FrequencyPreset.apply(@series, preset: "semimonthly", day_of_month: 5, second_day_of_month: 20)
+      @series.save!
+
+      assert first.reload.paid?
+      assert @series.recurring_occurrences.exists?(original_due_on: Date.new(2026, 8, 20))
+    end
+  end
+
+  test "weekend adjustment into the previous month does not suppress that month's bill" do
+    travel_to Date.new(2026, 8, 10) do
+      @series.update!(expected_day_of_month: 1, weekend_adjust: "before")
+      august = @series.recurring_occurrences.find_by!(original_due_on: Date.new(2026, 8, 1))
+      assert_equal Date.new(2026, 7, 31), august.due_on
+      RecurringTransaction::Allocator.new(august).mark_paid!
+
+      Generator.new(@series).backfill!(from: Date.new(2026, 7, 1), through: Date.new(2026, 7, 1))
+
+      assert @series.recurring_occurrences.exists?(original_due_on: Date.new(2026, 7, 1))
+      assert august.reload.paid?
+    end
+  end
 end

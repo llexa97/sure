@@ -70,7 +70,9 @@ class RecurringTransaction
       end
 
       def upsert_window(from, through)
-        pairs = series.schedule.occurrence_pairs_between(from, through)
+        schedule = series.schedule
+        pairs = schedule.occurrence_pairs_between(from, through)
+        pairs = preserve_monthly_history(pairs, schedule)
         return 0 if pairs.empty?
 
         now = Time.current
@@ -89,6 +91,31 @@ class RecurringTransaction
 
         result = RecurringOccurrence.insert_all(rows, unique_by: "idx_recurring_occurrences_identity")
         result.rows.size
+      end
+
+      # Moving a monthly due day must not create a second obligation in a month
+      # already represented by a payment or a closed occurrence. For example,
+      # detection shifting the 7th to the 6th must keep August's paid 7th rather
+      # than invent an overdue August 6th. Use the raw month: weekend adjustment
+      # can move the displayed due date into a neighbouring month.
+      # Multiple monthly rules and other cadences can legitimately owe several
+      # payments in one month, so they retain date-based identity.
+      def preserve_monthly_history(pairs, schedule)
+        return pairs if pairs.empty?
+        return pairs unless schedule.rules.one?
+
+        rule = schedule.rules.first
+        return pairs unless rule.frequency == "monthly" && rule.interval == 1 && rule.day_of_month.present?
+
+        dates = pairs.map(&:original_due_on)
+        existing = series.recurring_occurrences
+          .where(original_due_on: dates.min.beginning_of_month..dates.max.end_of_month)
+        protected = existing.closed.or(
+          existing.where(id: RecurringAllocation.select(:recurring_occurrence_id))
+        )
+        months = protected.pluck(:original_due_on).map(&:beginning_of_month).to_set
+
+        pairs.reject { |pair| months.include?(pair.original_due_on.beginning_of_month) }
       end
   end
 end
