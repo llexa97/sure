@@ -16,6 +16,7 @@ class RecurringTransaction
   #     they sum to the full expected amount.
   class Allocator
     class OverAllocationError < StandardError; end
+    class ExhaustedEntryError < OverAllocationError; end
     class MissingRateError < StandardError; end
 
     # Postgres keeps single-key and two-key advisory locks in separate spaces,
@@ -350,6 +351,10 @@ class RecurringTransaction
         end
 
         capacity = entry_capacity(entry, entry.amount.abs)
+
+        if capacity.zero?
+          raise ExhaustedEntryError, I18n.t("recurring_allocations.fully_allocated")
+        end
 
         if source_amount > capacity + RecurringOccurrence::CLOSE_EPSILON
           raise OverAllocationError, I18n.t("recurring_transactions.allocator.over_allocated",

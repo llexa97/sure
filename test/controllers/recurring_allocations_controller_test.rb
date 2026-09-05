@@ -114,4 +114,31 @@ class RecurringAllocationsControllerTest < ActionDispatch::IntegrationTest
     assert_equal 0, @occurrence.reload.allocations.count,
       "a nil-cast date would have silently defaulted the payment to today"
   end
+
+  test "an old transaction already fully applied to another occurrence explains the conflict" do
+    travel_to Date.new(2026, 9, 5) do
+      @series.update!(expected_day_of_month: 6, anchor_date: Date.new(2026, 8, 1))
+      requested = @series.recurring_occurrences.find_by!(original_due_on: Date.new(2026, 8, 6))
+      paid = @series.recurring_occurrences.create!(
+        family: @family, original_due_on: Date.new(2026, 8, 7),
+        due_on: Date.new(2026, 8, 7), currency: "USD"
+      )
+      entry = accounts(:credit_card).entries.create!(
+        date: Date.new(2026, 8, 7), amount: 95, currency: "USD",
+        name: @series.name, entryable: Transaction.new
+      )
+      RecurringTransaction::Allocator.new(paid).allocate!(entry: entry)
+
+      assert_no_difference "RecurringAllocation.count" do
+        post recurring_occurrence_allocations_url(requested), params: { entry_id: entry.id }
+      end
+
+      assert_redirected_to bills_url
+      assert_equal I18n.t("recurring_allocations.fully_allocated"), flash[:alert]
+      assert_empty requested.reload.allocations
+      assert_nil requested.expected_amount
+      assert paid.reload.paid?
+      assert_equal entry, paid.allocations.sole.entry
+    end
+  end
 end

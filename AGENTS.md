@@ -34,6 +34,13 @@
 - Never commit secrets. Start from `.env.local.example`; use `.env.local` for development only.
 - Run `bin/brakeman` before major PRs. Prefer environment variables over hard-coded values.
 
+## Accès à la production
+- Application en production : `ssh docker-app`.
+- Serveur de base de données en production : `ssh docker-db`.
+- Déploiement existant : projet Compose `sure`, fichier `/var/lib/docker/volumes/portainer_data/_data/compose/8/docker-compose.yml` sur `docker-app` (géré par Portainer).
+- Pour mettre à jour l'application, réutiliser explicitement ce projet et ce fichier avec `docker compose -p sure -f /var/lib/docker/volumes/portainer_data/_data/compose/8/docker-compose.yml` ; services applicatifs `web` et `worker`. Vérifier les labels Compose des conteneurs avant tout déploiement afin de ne pas créer une seconde instance.
+- Privilégier les diagnostics en lecture seule et ne jamais exposer les secrets dans les sorties ou les fichiers du dépôt.
+
 ## API Development Guidelines
 
 ### OpenAPI Documentation (MANDATORY)
