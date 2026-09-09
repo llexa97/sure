@@ -8,6 +8,8 @@ class AnalysesController < ApplicationController
       cashflow_year: params[:cashflow_year]
     )
 
+    @account_flow = params[:account_flow] == "income" ? :income : :expense
+
     @breadcrumbs = [
       [ t("breadcrumbs.home"), root_path ],
       [ t("breadcrumbs.analysis"), nil ]

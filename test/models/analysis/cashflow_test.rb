@@ -95,6 +95,31 @@ class Analysis::CashflowTest < ActiveSupport::TestCase
     end
   end
 
+  test "annual account income breakdown sorts and calculates shares independently of expenses" do
+    second = create_depository_account(name: "Income checking", subtype: "checking")
+    create_transaction(account: @account, date: Date.current, amount: -100, name: "Income")
+    create_transaction(account: second, date: Date.current, amount: -300, name: "Larger income")
+    create_transaction(account: @account, date: Date.current, amount: 80, name: "Expense")
+    analysis = Analysis::Cashflow.new(family: @family, user: @user)
+
+    income_rows = analysis.annual_account_breakdown(flow: :income)
+    assert_equal second.id.to_s, income_rows.first[:id]
+    assert_equal 75, income_rows.first[:percentage]
+    assert_equal 25, income_rows.find { |row| row[:id] == @account.id.to_s }[:percentage]
+    assert_equal [ 300, 100 ], analysis.annual_account_segments(flow: :income).pluck(:amount)
+    assert_equal @account.id.to_s, analysis.annual_account_breakdown.first[:id]
+    assert_equal 100, analysis.annual_account_breakdown.first[:percentage]
+    assert_equal [ 80 ], analysis.annual_account_segments.pluck(:amount)
+  end
+
+  test "annual account income breakdown handles accounts without income" do
+    create_transaction(account: @account, date: Date.current, amount: 80, name: "Only expense")
+    analysis = Analysis::Cashflow.new(family: @family, user: @user)
+
+    assert_empty analysis.annual_account_segments(flow: :income)
+    assert analysis.annual_account_breakdown(flow: :income).all? { |row| row[:percentage].zero? }
+  end
+
   test "details net expenses across root categories and subcategories" do
     travel_to Date.new(2026, 8, 15) do
       parent = @family.categories.create!(

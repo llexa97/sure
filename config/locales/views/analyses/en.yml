@@ -39,6 +39,11 @@ en:
         table_caption: Monthly income and expense values and shares by checking account for %{year}
         title: Annual income and expenses
       accounts:
+        flow_selector: Display cash flows
+        flow_options:
+          expense: Expenses
+          income: Money in
+        total_income: Annual money in
         account: Checking account
         description: Compare each checking account’s contribution to your %{year} cash flow.
         empty_description: Add or link a checking account to display this analysis.

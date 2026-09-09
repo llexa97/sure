@@ -39,6 +39,11 @@ fr:
         table_caption: Valeurs mensuelles et proportions des revenus et des dépenses par compte courant pour %{year}
         title: Revenus et dépenses annuels
       accounts:
+        flow_selector: Afficher les flux
+        flow_options:
+          expense: Dépenses
+          income: Entrées d’argent
+        total_income: Entrées d’argent annuelles
         account: Compte courant
         description: Comparez la contribution de chaque compte courant à vos flux de %{year}.
         empty_description: Ajoutez ou rattachez un compte de type « Compte courant » pour afficher cette analyse.

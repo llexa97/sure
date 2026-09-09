@@ -129,7 +129,14 @@ module Analysis
       end
     end
 
-    def annual_account_breakdown
+    def annual_account_breakdown(flow: :expense)
+      if flow == :income
+        rows = annual_account_breakdown
+        total_income = rows.sum { |row| row[:income].amount }
+        return rows.map { |row| row.merge(percentage: percentage_share(row[:income].amount, total_income)) }
+          .sort_by { |row| -row[:income].amount }
+      end
+
       @annual_account_breakdown ||= begin
         legend_by_id = annual_account_legend.index_by { |account| account[:id] }
         rows = checking_accounts.map do |account|
@@ -157,11 +164,11 @@ module Analysis
       end
     end
 
-    def annual_account_segments
-      annual_account_breakdown.filter_map do |account|
-        next unless account[:expense].positive?
+    def annual_account_segments(flow: :expense)
+      annual_account_breakdown(flow: flow).filter_map do |account|
+        next unless account[flow].positive?
 
-        account.slice(:id, :name, :color).merge(amount: account[:expense_value])
+        account.slice(:id, :name, :color).merge(amount: account[flow].amount.to_f.round(2))
       end
     end
 

@@ -126,6 +126,8 @@
     </div>
   </div>
 
-  <%= render "analyses/account_breakdown", analysis: @analysis %>
+  <%= turbo_frame_tag "annual-account-breakdown", class: "block" do %>
+    <%= render "analyses/account_breakdown", analysis: @analysis, flow: @account_flow %>
+  <% end %>
   <%= render "analyses/expense_breakdown", analysis: @analysis %>
 </div>

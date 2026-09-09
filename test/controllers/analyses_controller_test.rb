@@ -70,6 +70,29 @@ class AnalysesControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ accounts(:depository).id.to_s ], account_query.dig("q", "account_ids")
   end
 
+  test "account card switches between expenses and income within its turbo frame" do
+    @family.accounts.each { |account| account.entries.destroy_all }
+    create_transaction(account: accounts(:depository), date: Date.current, amount: -400, name: "Income")
+    create_transaction(account: accounts(:depository), date: Date.current, amount: 75, name: "Expense")
+
+    { "income" => 400, "expense" => 75, "invalid" => 75 }.each do |flow, amount|
+      get analysis_path(account_flow: flow), headers: { "Turbo-Frame" => "annual-account-breakdown" }
+
+      assert_response :ok
+      selected_flow = flow == "income" ? "income" : "expense"
+      assert_select "turbo-frame#annual-account-breakdown", count: 1 do
+        assert_select "#account-breakdown-title", count: 1
+        assert_select "a[aria-current='true']", text: I18n.t("analyses.show.accounts.flow_options.#{selected_flow}")
+        assert_select "a[data-turbo-frame='annual-account-breakdown']", count: 2
+        assert_select "[data-controller='donut-chart']", count: 1 do |charts|
+          segments = JSON.parse(charts.first["data-donut-chart-segments-value"])
+          assert_equal [ amount ], segments.pluck("amount")
+        end
+        assert_select "[data-donut-chart-target='defaultContent']", text: /#{Regexp.escape(I18n.t("analyses.show.accounts.flow_options.#{selected_flow}"))}/
+      end
+    end
+  end
+
   test "show keeps the selected analysis level separate from the annual chart year" do
     travel_to Date.new(2026, 8, 15) do
       create_transaction(
