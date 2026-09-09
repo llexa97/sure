@@ -24,16 +24,31 @@
     <div class="space-y-1">
       <% if account_group.grouped_by_subtype? %>
         <% account_group.subtype_groups.each do |subtype_group| %>
-          <%= tag.div class: "px-3 pt-3 pb-1 flex items-center justify-between gap-3 text-xs font-medium text-secondary",
-                      data: { testid: "account-subtype-group", account_subtype: subtype_group.key } do %>
-            <%= tag.p class: class_names("truncate", "animate-pulse" => subtype_group.syncing?) do %>
-              <%= subtype_group.name %> &middot; <%= subtype_group.accounts.size %>
+          <%= render DS::Disclosure.new(
+            open: true,
+            class: "group/account-subtype",
+            summary_class: "px-3 py-2 min-h-11 flex items-center justify-between gap-3 text-xs font-medium text-secondary list-none cursor-pointer rounded-lg hover:bg-surface-hover focus-ring",
+            body_class: "space-y-1",
+            data: {
+              testid: "account-subtype-group",
+              account_subtype: subtype_group.key,
+              controller: "persisted-disclosure",
+              persisted_disclosure_key_value: "sidebar:#{Current.user.id}:#{account_group.key}:#{subtype_group.key}"
+            }
+          ) do |subtype_disclosure| %>
+            <% subtype_disclosure.with_summary_content do %>
+              <div class="flex items-center gap-2 min-w-0">
+                <%= icon "chevron-right", size: "sm", class: "shrink-0 group-open/account-subtype:rotate-90 motion-safe:transition-transform" %>
+                <%= tag.span class: class_names("truncate", "animate-pulse" => subtype_group.syncing?) do %>
+                  <%= subtype_group.name %> &middot; <%= subtype_group.accounts.size %>
+                <% end %>
+              </div>
+              <%= tag.span format_money(subtype_group.total_money), class: "privacy-sensitive whitespace-nowrap" %>
             <% end %>
-            <%= tag.p format_money(subtype_group.total_money), class: "privacy-sensitive whitespace-nowrap" %>
-          <% end %>
 
-          <% subtype_group.accounts.each do |account| %>
-            <%= render "accounts/accountable_group_account", account: account, account_group: account_group %>
+            <% subtype_group.accounts.each do |account| %>
+              <%= render "accounts/accountable_group_account", account: account, account_group: account_group %>
+            <% end %>
           <% end %>
         <% end %>
       <% else %>
