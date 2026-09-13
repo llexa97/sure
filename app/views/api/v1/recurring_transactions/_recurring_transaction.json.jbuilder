@@ -9,7 +9,7 @@ json.amount_cents money_to_minor_units.call(recurring_transaction.amount_money)
 json.currency recurring_transaction.currency
 json.expected_day_of_month recurring_transaction.expected_day_of_month
 json.last_occurrence_date recurring_transaction.last_occurrence_date
-json.next_expected_date recurring_transaction.next_expected_date
+json.next_expected_date recurring_transaction.next_due_date
 json.status recurring_transaction.status
 json.occurrence_count recurring_transaction.occurrence_count
 json.name recurring_transaction.name

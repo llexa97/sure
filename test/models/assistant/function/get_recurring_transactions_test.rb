@@ -45,6 +45,31 @@ class Assistant::Function::GetRecurringTransactionsTest < ActiveSupport::TestCas
     assert_includes wide[:recurring_transactions].map { |rt| rt[:name] }, "Netflix"
   end
 
+  test "settled dates are replaced by the open occurrence for output and window totals" do
+    series = recurring_transactions(:netflix_subscription)
+    stale = 40.days.ago.to_date
+    series.update!(next_expected_date: stale)
+    series.recurring_occurrences.create!(family: @family, original_due_on: stale, due_on: stale,
+                                        currency: series.currency, status: :paid, closed_at: Time.current)
+    due = 10.days.from_now.to_date
+    occurrence = series.recurring_occurrences.create!(family: @family, original_due_on: due, due_on: due,
+                                                    currency: series.currency, snoozed_until: due + 2)
+
+    result = @fn.call("upcoming_within_days" => 15)
+    row = result[:recurring_transactions].find { |item| item[:id] == series.id }
+    assert_equal due + 2, row[:next_expected_date]
+    assert_equal "$15.99", result[:totals_by_currency]["USD"]
+    assert_equal stale, series.reload.next_expected_date
+    assert_empty @fn.call("upcoming_within_days" => 5)[:recurring_transactions]
+
+    occurrence.update!(due_on: 10.days.ago.to_date, snoozed_until: nil)
+    series.update!(next_expected_date: due)
+    assert_empty @fn.call("upcoming_within_days" => 15)[:recurring_transactions]
+    assert_empty @fn.call("upcoming_within_days" => 15)[:totals_by_currency]
+    row = @fn.call[:recurring_transactions].find { |item| item[:id] == series.id }
+    assert_equal 10.days.ago.to_date, row[:next_expected_date]
+  end
+
   test "totals sum active items per currency and exclude transfers" do
     checking = @family.accounts.visible.first
     savings = @family.accounts.visible.second

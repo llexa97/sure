@@ -18,6 +18,11 @@ class Assistant::Function::GetRecurringTransactions < Assistant::Function
         expected between today and that many days from now (overdue items appear
         when no window is given). totals_by_currency sums active items excluding
         transfers, which move money between the user's own accounts.
+        Dates follow the earliest open Bills occurrence, including snoozes.
+        If no open occurrence exists, dates fall back to the legacy schedule hint;
+        a past date alone does not prove that a payment is overdue.
+        For the Bills section and payment history, prefer get_bills and get_bill_details
+        when available. Active is the series lifecycle, not its payment state.
       INSTRUCTIONS
     end
   end
@@ -48,27 +53,29 @@ class Assistant::Function::GetRecurringTransactions < Assistant::Function
   def call(params = {})
     scope = family.recurring_transactions
       .accessible_by(user)
-      .includes(:merchant, :account, :destination_account)
+      .includes(:merchant, :account, :destination_account, :recurring_occurrences, :recurrence_rules)
 
     status = params["status"].presence_in([ "active", "inactive", "all" ]) || "active"
     scope = scope.where(status: status) unless status == "all"
 
+    rows = scope.to_a
     if params["upcoming_within_days"].present?
       days = params["upcoming_within_days"].to_i.clamp(1, 365)
-      # A forward-looking window: overdue items (past next_expected_date)
-      # appear in unwindowed calls, not inside "the next N days".
-      scope = scope.where(next_expected_date: Date.current..days.days.from_now.to_date)
+      window = Date.current..(Date.current + days)
+      rows.select! { |recurring| window.cover?(recurring.next_due_date) }
     end
 
-    total_count = scope.count
-    rows = scope.order(status: :asc, next_expected_date: :asc).limit(MAX_RESULTS).to_a
+    rows.sort_by! { |recurring| [ recurring.status, recurring.next_due_date, recurring.id ] }
+    total_count = rows.size
+    totals = totals_by_currency(scope.except(:includes).where(id: rows.map(&:id)))
+    rows = rows.first(MAX_RESULTS)
 
     {
       as_of_date: Date.current,
       total_results: total_count,
       truncated: total_count > MAX_RESULTS,
       recurring_transactions: rows.map { |rt| serialize(rt) },
-      totals_by_currency: totals_by_currency(scope)
+      totals_by_currency: totals
     }
   end
 
@@ -82,7 +89,7 @@ class Assistant::Function::GetRecurringTransactions < Assistant::Function
         currency: recurring.currency,
         status: recurring.status,
         expected_day_of_month: recurring.expected_day_of_month,
-        next_expected_date: recurring.next_expected_date,
+        next_expected_date: recurring.next_due_date,
         last_occurrence_date: recurring.last_occurrence_date,
         occurrence_count: recurring.occurrence_count,
         is_manual: recurring.manual?,

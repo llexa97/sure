@@ -794,7 +794,7 @@ RSpec.configure do |config|
               currency: { type: :string },
               expected_day_of_month: { type: :integer, minimum: 1, maximum: 31 },
               last_occurrence_date: { type: :string, format: :date },
-              next_expected_date: { type: :string, format: :date },
+              next_expected_date: { type: :string, format: :date, description: 'Effective due date of the earliest open Bills occurrence, including snoozes. Falls back to the legacy schedule hint when no open occurrence exists. May be in the past; active describes the series lifecycle, not payment state.' },
               status: { type: :string, enum: %w[suggested active paused inactive ended] },
               occurrence_count: { type: :integer, minimum: 0 },
               name: { type: :string, nullable: true },

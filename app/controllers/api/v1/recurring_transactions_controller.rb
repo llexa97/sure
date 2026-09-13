@@ -18,13 +18,16 @@ class Api::V1::RecurringTransactionsController < Api::V1::BaseController
 
     @per_page = safe_per_page_param
     recurring_transactions_query = read_recurring_transactions_scope
-      .includes(:account, :merchant, :recurrence_rules)
-      .order(status: :asc, next_expected_date: :asc)
+      .includes(:account, :merchant, :recurrence_rules, :recurring_occurrences)
 
     recurring_transactions_query = apply_filters(recurring_transactions_query)
 
-    @pagy, @recurring_transactions = pagy(
-      recurring_transactions_query,
+    rows = recurring_transactions_query.to_a.sort_by do |recurring|
+      [ recurring.status, recurring.next_due_date, recurring.id ]
+    end
+
+    @pagy, @recurring_transactions = pagy_array(
+      rows,
       page: safe_page_param,
       limit: @per_page
     )
@@ -152,7 +155,7 @@ class Api::V1::RecurringTransactionsController < Api::V1::BaseController
     def find_recurring_transaction(scope)
       raise ActiveRecord::RecordNotFound unless valid_uuid?(params[:id])
 
-      scope.includes(:account, :merchant).find(params[:id])
+      scope.includes(:account, :merchant, :recurrence_rules, :recurring_occurrences).find(params[:id])
     end
 
     def ensure_read_scope

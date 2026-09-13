@@ -1441,6 +1441,10 @@ components:
         next_expected_date:
           type: string
           format: date
+          description: Effective due date of the earliest open Bills occurrence, including
+            snoozes. Falls back to the legacy schedule hint when no open occurrence
+            exists. May be in the past; active describes the series lifecycle, not
+            payment state.
         status:
           type: string
           enum:
@@ -6115,6 +6119,8 @@ paths:
   "/api/v1/recurring_transactions":
     get:
       summary: List recurring transactions
+      description: Returns dates aligned with Bills, ordered by status and effective
+        next due date before pagination.
       tags:
       - Recurring Transactions
       security:
@@ -6294,6 +6300,8 @@ paths:
         type: string
     get:
       summary: Retrieve recurring transaction
+      description: The next_expected_date response follows the earliest open Bills
+        occurrence, rather than a stale stored prediction.
       tags:
       - Recurring Transactions
       security:

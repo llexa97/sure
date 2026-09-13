@@ -49,6 +49,35 @@ class Api::V1::RecurringTransactionsControllerTest < ActionDispatch::Integration
     assert_includes response_data["recurring_transactions"].map { |item| item["id"] }, @recurring_transaction.id
   end
 
+  test "list paginates by open due dates and show ignores a settled cached date" do
+    travel_to Date.new(2026, 9, 14) do
+      series = @recurring_transaction
+      series.recurring_occurrences.destroy_all
+      series.update!(next_expected_date: Date.new(2026, 8, 6))
+      series.recurring_occurrences.create!(family: @family, original_due_on: Date.new(2026, 8, 6),
+                                          due_on: Date.new(2026, 8, 6), currency: "USD", status: :paid, closed_at: Time.current)
+      series.recurring_occurrences.create!(family: @family, original_due_on: Date.new(2026, 10, 6),
+                                          due_on: Date.new(2026, 10, 6), currency: "USD",
+                                          snoozed_until: Date.new(2026, 10, 8))
+      other = recurring_transactions(:netflix_subscription)
+      other.update!(next_expected_date: Date.new(2026, 10, 15))
+      other.recurring_occurrences.create!(family: @family, original_due_on: Date.new(2026, 9, 17),
+                                         due_on: Date.new(2026, 9, 17), currency: "USD")
+
+      get api_v1_recurring_transactions_url, params: { status: "active", per_page: 1 },
+          headers: api_headers(@read_only_api_key)
+      assert_response :success
+      row = response.parsed_body["recurring_transactions"].first
+      assert_equal other.id, row["id"]
+      assert_equal "2026-09-17", row["next_expected_date"]
+
+      get api_v1_recurring_transaction_url(series), headers: api_headers(@read_only_api_key)
+      assert_response :success
+      assert_equal "2026-10-08", response.parsed_body["next_expected_date"]
+      assert_equal Date.new(2026, 8, 6), series.reload.next_expected_date
+    end
+  end
+
   test "should require authentication when listing recurring transactions" do
     get api_v1_recurring_transactions_url
 
