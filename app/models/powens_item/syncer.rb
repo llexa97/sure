@@ -10,6 +10,9 @@ class PowensItem::Syncer
   def perform_sync(sync)
     sync.update!(status_text: "Importing accounts from Powens...") if sync.respond_to?(:status_text)
     result = powens_item.import_latest_powens_data(sync: sync, sync_connection: true)
+    if result[:refresh_pending]
+      PowensRefreshJob.set(wait: 30.seconds).perform_later(powens_item)
+    end
     raise StandardError.new(result[:error] || "Powens import failed") unless result[:success]
 
     sync.update!(status_text: "Checking account configuration...") if sync.respond_to?(:status_text)

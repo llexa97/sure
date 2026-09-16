@@ -19,11 +19,11 @@ class Provider::PowensAdapterTest < ActiveSupport::TestCase
     assert configuration.fields.find { |field| field.name == :client_secret }.secret
   end
 
-  test "supports bank account types only" do
+  test "supports bank and investment account types" do
     assert_includes Provider::PowensAdapter.supported_account_types, "Depository"
     assert_includes Provider::PowensAdapter.supported_account_types, "CreditCard"
     assert_includes Provider::PowensAdapter.supported_account_types, "Loan"
-    assert_not_includes Provider::PowensAdapter.supported_account_types, "Investment"
+    assert_includes Provider::PowensAdapter.supported_account_types, "Investment"
   end
 
   test "returns connection config when configured" do

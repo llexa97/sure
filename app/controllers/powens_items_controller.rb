@@ -47,7 +47,10 @@ class PowensItemsController < ApplicationController
     end
 
     result = item.import_latest_powens_data(wait_for_source_refresh: item.requires_update?)
-    if result[:success]
+    if result[:refresh_pending]
+      PowensRefreshJob.set(wait: 30.seconds).perform_later(item)
+      redirect_to accounts_path, notice: t("powens_items.refresh_pending")
+    elsif result[:success]
       item.process_accounts
       item.schedule_account_syncs
       redirect_to setup_accounts_powens_item_path(item), notice: "Powens connection linked. Select accounts to import."
@@ -69,7 +72,6 @@ class PowensItemsController < ApplicationController
       expand: "accounts,connector,sources"
     )
     @powens_item.update_from_connection!(connection)
-    reconnect_sources = @powens_item.reconnect_source_names(connection)
 
     code = provider.generate_temporary_code(@powens_item.access_token, type: "singleAccess")
     redirect_to provider.reconnect_webview_url(
@@ -77,9 +79,7 @@ class PowensItemsController < ApplicationController
       code: code[:code],
       connection_id: @powens_item.connection_id,
       state: @powens_item.reference,
-      lang: I18n.locale,
-      reset_credentials: reconnect_sources.any? ? true : nil,
-      connection_sources: reconnect_sources
+      lang: I18n.locale
     ), allow_other_host: true
   rescue Provider::Powens::PowensError => e
     redirect_to accounts_path, alert: "Powens error: #{e.message}"

@@ -11,7 +11,7 @@ class PowensItem < ApplicationRecord
     passwordExpired
   ].freeze
 
-  enum :status, { good: "good", requires_update: "requires_update" }, default: :good
+  enum :status, { good: "good", requires_update: "requires_update", refreshing: "refreshing", refresh_failed: "refresh_failed" }, default: :good
 
   if encryption_ready?
     encrypts :access_token
@@ -81,7 +81,13 @@ class PowensItem < ApplicationRecord
       connector_name: connector[:name].presence || connector_name || name,
       connector_color: connector[:color],
       connection_state: issue&.fetch(:state),
-      status: issue&.fetch(:user_action_required) ? :requires_update : :good,
+      status: if issue&.fetch(:user_action_required)
+                :requires_update
+              elsif source_refresh_baseline.any?
+                refresh_failed? ? :refresh_failed : :refreshing
+              else
+                :good
+              end,
       raw_connection_payload: data
     )
   end
@@ -125,6 +131,20 @@ class PowensItem < ApplicationRecord
       .select { |source| source[:state].to_s.in?(USER_ACTION_CONNECTION_STATES) }
       .filter_map { |source| source[:name].presence }
       .uniq
+  end
+
+  # Keep the pre-reconnect timestamps across requests and worker retries. The
+  # connection snapshot itself is replaced on every read from Powens.
+  def source_refresh_baseline
+    raw_payload.to_h.fetch("sure_source_refresh", {})
+  end
+
+  def remember_source_refresh!(baseline)
+    update!(raw_payload: raw_payload.to_h.merge("sure_source_refresh" => baseline))
+  end
+
+  def clear_source_refresh!
+    update!(raw_payload: raw_payload.to_h.except("sure_source_refresh")) if source_refresh_baseline.any?
   end
 
   private

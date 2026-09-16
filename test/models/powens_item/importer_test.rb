@@ -193,8 +193,45 @@ class PowensItem::ImporterTest < ActiveSupport::TestCase
     ).import
 
     assert_not result[:success]
-    assert_match(/cached values were not imported/, result[:error])
+    assert result[:refresh_pending]
+    assert_predicate @powens_item.reload, :refreshing?
+    assert_equal({ "directaccess" => "2026-07-14 09:29:39" }, @powens_item.source_refresh_baseline)
+    assert_nil @powens_item.last_synced_at
+
+    # A later worker reads the new snapshot but must retain the original date.
+    connection[:sources][0][:last_update] = "2026-08-06 18:45:00"
+    provider.expects(:get_connection).returns(connection)
+    provider.expects(:sync_connection).never
+    provider.unstub(:list_account_transactions)
+    provider.expects(:list_account_transactions).returns(transactions: [])
+    result = PowensItem::Importer.new(@powens_item.reload, powens_provider: provider, sync_connection: true).import
+
+    assert result[:success]
+    assert_predicate @powens_item.reload, :good?
+    assert_empty @powens_item.source_refresh_baseline
+  end
+
+  test "validation in progress is retried but a new SCA is still reported" do
+    @powens_item.remember_source_refresh!("directaccess" => "2026-07-14 09:29:39")
+    connection = {
+      id: 99,
+      sources: [ { name: "directaccess", state: "validating", last_update: "2026-07-14 09:29:39" } ]
+    }
+    provider = mock
+    provider.expects(:get_connection).returns(connection)
+    provider.expects(:list_accounts).never
+    result = PowensItem::Importer.new(@powens_item, powens_provider: provider).import
+
+    assert result[:refresh_pending]
+    assert_predicate @powens_item.reload, :refreshing?
+
+    connection[:sources][0][:state] = "SCARequired"
+    provider.expects(:get_connection).returns(connection)
+    result = PowensItem::Importer.new(@powens_item, powens_provider: provider).import
+
+    assert_not result[:refresh_pending]
     assert_predicate @powens_item.reload, :requires_update?
+    assert_empty @powens_item.source_refresh_baseline
   end
 
   private

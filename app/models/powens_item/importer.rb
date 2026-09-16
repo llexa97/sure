@@ -1,5 +1,5 @@
 class PowensItem::Importer
-  SOURCE_REFRESH_POLL_ATTEMPTS = 10
+  SOURCE_REFRESH_POLL_ATTEMPTS = 1
   SOURCE_REFRESH_POLL_INTERVAL = 2.seconds
 
   attr_reader :powens_item, :powens_provider, :sync, :sync_connection, :wait_for_source_refresh,
@@ -27,12 +27,23 @@ class PowensItem::Importer
     raise StandardError.new("Powens provider is not configured") unless powens_provider
     raise StandardError.new("Powens access token is missing") if powens_item.access_token.blank?
 
-    refresh_connection if sync_connection && powens_item.connection_id.present? && !powens_item.requires_update?
+    refresh_connection if sync_connection && powens_item.connection_id.present? && !powens_item.requires_update? && powens_item.source_refresh_baseline.empty?
 
     connection, pending_refresh_sources = fetch_connection_after_reconnect
     powens_item.update_from_connection!(connection)
 
-    if (issue = powens_item.connection_issue(connection))
+    issue = powens_item.connection_issue(connection)
+    if pending_refresh_sources.any? && (issue.nil? || issue[:state].split(",").all? { |state| state == "validating" })
+      powens_item.update!(status: :refreshing)
+      return { success: false, refresh_pending: true, error: "Powens source refresh is still pending", accounts_updated: 0, transactions_imported: 0 }
+    end
+
+    if issue
+      if issue[:user_action_required]
+        powens_item.clear_source_refresh!
+      elsif powens_item.source_refresh_baseline.any?
+        powens_item.update!(status: :refresh_failed)
+      end
       source_label = issue[:sources].any? ? " for #{issue[:sources].join(', ')}" : ""
       action = issue[:user_action_required] ? "requires user action" : "could not refresh"
       return failure_result(
@@ -40,15 +51,6 @@ class PowensItem::Importer
         state: issue[:state],
         sources: issue[:sources],
         user_action_required: issue[:user_action_required]
-      )
-    end
-
-    if pending_refresh_sources.any?
-      powens_item.update!(status: :requires_update)
-      return failure_result(
-        "Powens is still refreshing #{pending_refresh_sources.join(', ')}; cached values were not imported",
-        sources: pending_refresh_sources,
-        refresh_pending: true
       )
     end
 
@@ -78,7 +80,10 @@ class PowensItem::Importer
       end
     end
 
-    powens_item.update!(last_synced_at: Time.current) if powens_item.has_attribute?(:last_synced_at)
+    if accounts_failed.zero? && transactions_failed.zero?
+      powens_item.clear_source_refresh!
+      powens_item.update!(status: :good, last_synced_at: Time.current)
+    end
     { success: accounts_failed.zero? && transactions_failed.zero?, accounts_updated: accounts_updated, accounts_failed: accounts_failed, transactions_imported: transactions_imported, transactions_failed: transactions_failed }
   rescue Provider::Powens::PowensError => e
     handle_provider_error(e)
@@ -102,15 +107,18 @@ class PowensItem::Importer
     end
 
     def fetch_connection_after_reconnect
-      return [ fetch_connection, [] ] unless wait_for_source_refresh
+      return [ fetch_connection, [] ] unless wait_for_source_refresh || powens_item.source_refresh_baseline.any?
 
-      baseline = powens_item.raw_connection_payload.to_h.with_indifferent_access
-      source_names = powens_item.reconnect_source_names(baseline)
-      return [ fetch_connection, [] ] if source_names.empty?
-
-      baseline_updates = source_names.index_with do |source_name|
-        source_by_name(baseline, source_name)&.dig(:last_update)
+      baseline_updates = powens_item.source_refresh_baseline
+      if baseline_updates.empty?
+        baseline = powens_item.raw_connection_payload.to_h.with_indifferent_access
+        baseline_updates = powens_item.reconnect_source_names(baseline).index_with do |source_name|
+          source_by_name(baseline, source_name)&.dig(:last_update)
+        end
+        powens_item.remember_source_refresh!(baseline_updates) if baseline_updates.any?
       end
+      source_names = baseline_updates.keys
+      return [ fetch_connection, [] ] if source_names.empty?
       connection = nil
 
       source_refresh_poll_attempts.times do |attempt|
@@ -236,6 +244,7 @@ class PowensItem::Importer
     def handle_provider_error(error)
       case error.error_type
       when :invalid_token, :access_denied, :not_found
+        powens_item.clear_source_refresh!
         powens_item.update!(status: :requires_update)
       when :rate_limited
         sync&.update!(sync_stats: (sync.sync_stats || {}).merge("rate_limited" => true, "rate_limit_headers" => error.headers)) if sync&.respond_to?(:sync_stats)

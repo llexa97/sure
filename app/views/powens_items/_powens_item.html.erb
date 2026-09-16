@@ -17,6 +17,10 @@
               <p class="text-destructive text-sm animate-pulse">Deletion pending...</p>
             <% elsif powens_item.requires_update? %>
               <p class="text-warning text-sm">Reconnect required</p>
+            <% elsif powens_item.refreshing? %>
+              <p class="text-secondary text-sm"><%= t("powens_items.refreshing") %></p>
+            <% elsif powens_item.refresh_failed? %>
+              <p class="text-warning text-sm"><%= t("powens_items.refresh_failed") %></p>
             <% end %>
           </div>
           <% if powens_item.syncing? %>
