@@ -89,6 +89,42 @@ class PowensAccount::Investments::TransactionsProcessorTest < ActiveSupport::Tes
     assert_equal BigDecimal("5.52"), entry.amount
   end
 
+  test "imports and reimports market orders using the remapped holding security" do
+    @powens_account.update!(raw_holdings_payload: {
+      investments: [ {
+        id: "holding-1", code: "IE000DQLYVB9", code_type: "ISIN",
+        label: "S&P 500 Swap Pea Eur (Acc)", quantity: "41",
+        unitprice: "5.647396", unitvalue: "6.46", valuation: "264.86",
+        original_currency: { id: "EUR" }, vdate: "2025-10-02"
+      } ]
+    })
+    holding = @account.holdings.create!(
+      account_provider: @powens_account.account_provider,
+      provider_security: @security,
+      security: securities(:msft),
+      security_locked: true,
+      date: Date.new(2025, 10, 2), qty: 41, price: 6.46, amount: 264.86, currency: "EUR"
+    )
+    resolver = mock("Powens security resolver")
+    resolver.expects(:resolve).twice.returns(OpenStruct.new(security: @security))
+
+    2.times do |index|
+      matcher = PowensAccount::Investments::SecurityMatcher.new(@powens_account, security_resolver: resolver)
+      processor = PowensAccount::Investments::TransactionsProcessor.new(@powens_account, security_matcher: matcher)
+
+      assert_difference [ "Entry.count", "Trade.count" ], index.zero? ? 1 : 0 do
+        processor.process
+      end
+
+      entry = @account.entries.find_by!(external_id: "powens_901", source: "powens")
+      assert_equal holding.security, entry.trade.security
+      assert_equal BigDecimal("5.52"), entry.amount
+    end
+
+    assert_equal BigDecimal("41"), holding.reload.qty
+    assert_equal BigDecimal("264.86"), holding.amount
+  end
+
   private
     def processor_with_matcher
       match = PowensAccount::Investments::SecurityMatcher::Match.new(

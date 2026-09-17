@@ -53,4 +53,62 @@ class PowensAccount::Investments::SecurityMatcherTest < ActiveSupport::TestCase
     assert_equal BigDecimal("5.647396"), match.unit_price
     assert_equal "EUR", match.currency
   end
+
+  test "uses the holding security mapping for subsequent market orders" do
+    holding = create_remapped_holding
+
+    match = match_provider_security
+
+    assert_equal holding.security, match.security
+    assert_equal BigDecimal("5.647396"), match.unit_price
+    assert_equal "EUR", match.currency
+  end
+
+  test "does not use another account's security mapping" do
+    create_remapped_holding(account: accounts(:depository))
+
+    assert_equal securities(:aapl), match_provider_security.security
+  end
+
+  test "does not use another provider's security mapping" do
+    other_provider = AccountProvider.create!(account: accounts(:investment), provider: plaid_accounts(:one))
+    create_remapped_holding(account_provider: other_provider)
+
+    assert_equal securities(:aapl), match_provider_security.security
+  end
+
+  test "does not use a manual holding's security mapping" do
+    create_remapped_holding(account_provider: nil)
+
+    assert_equal securities(:aapl), match_provider_security.security
+  end
+
+  test "does not use an unlocked security mapping" do
+    create_remapped_holding(security_locked: false)
+
+    assert_equal securities(:aapl), match_provider_security.security
+  end
+
+  private
+    def create_remapped_holding(**attributes)
+      Holding.create!({
+        account: accounts(:investment),
+        account_provider: @powens_account.account_provider,
+        provider_security: securities(:aapl),
+        security: securities(:msft),
+        security_locked: true,
+        date: Date.current,
+        qty: 38,
+        price: 6,
+        amount: 228,
+        currency: "EUR"
+      }.merge(attributes))
+    end
+
+    def match_provider_security
+      resolver = mock("Powens security resolver")
+      resolver.expects(:resolve).returns(OpenStruct.new(security: securities(:aapl)))
+      matcher = PowensAccount::Investments::SecurityMatcher.new(@powens_account, security_resolver: resolver)
+      matcher.match("S&P 500 Swap Pea Eur (Acc) Plan d'épargne exécuté")
+    end
 end

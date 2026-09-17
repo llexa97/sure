@@ -43,13 +43,24 @@ class PowensAccount::Investments::SecurityMatcher
         next if normalized_label.blank?
 
         Match.new(
-          security: resolved.security,
+          security: remapped_security(resolved.security) || resolved.security,
           label: normalized[:label],
           normalized_label: normalized_label,
           unit_price: unit_price,
           currency: normalized[:currency]
         )
       end.sort_by { |candidate| -candidate.normalized_label.length }
+    end
+
+    # Holdings keep the provider's identifier after a user changes their security.
+    # Apply that same account/provider mapping to subsequent trade imports.
+    def remapped_security(provider_security)
+      account.holdings
+        .where(account_provider_id: powens_account.account_provider.id,
+               provider_security_id: provider_security.id,
+               security_locked: true)
+        .order(date: :desc, updated_at: :desc)
+        .first&.security
     end
 
     def account
