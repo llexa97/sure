@@ -4,8 +4,11 @@ module Assistant::Configurable
   # The byte-stable half of the system prompt. Everything volatile (date,
   # currency, per-family context) lives in the trailing Session context block,
   # because providers cache and discount an exactly-repeated prefix; one
-  # changed byte mid-prompt invalidates everything after it. Self-hosters
-  # customizing the prompt should edit this constant.
+  # changed byte mid-prompt invalidates everything after it.
+  #
+  # This is the default. A family can override it from /settings/ai_prompts
+  # (`Family#ai_prompt(:chat_system)`), which trades that cache discount away for
+  # that family only. Edit the constant to change what every family starts from.
   STATIC_INSTRUCTIONS = <<~PROMPT.freeze
     ## Your identity
 
@@ -61,9 +64,8 @@ module Assistant::Configurable
           functions: []
         }
       else
-        custom = family.custom_assistant_instructions.presence
         {
-          instructions: custom || default_instructions(preferred_currency, preferred_date_format, user: chat.user),
+          instructions: default_instructions(preferred_currency, preferred_date_format, user: chat.user),
           functions: default_functions(chat.user)
         }
       end
@@ -110,7 +112,9 @@ module Assistant::Configurable
       end
 
       def default_instructions(preferred_currency, preferred_date_format, user: nil)
-        "#{Assistant::Configurable::STATIC_INSTRUCTIONS}\n#{session_context(preferred_currency, preferred_date_format, user: user)}"
+        static = user&.family&.ai_prompt(:chat_system) || Assistant::Configurable::STATIC_INSTRUCTIONS
+
+        "#{static}\n#{session_context(preferred_currency, preferred_date_format, user: user)}"
       end
 
       def session_context(preferred_currency, preferred_date_format, user: nil)

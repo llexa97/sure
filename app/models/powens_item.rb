@@ -1,5 +1,5 @@
 class PowensItem < ApplicationRecord
-  include Syncable, Provided, Encryptable
+  include Syncable, Provided, Encryptable, DestroyableLater
 
   USER_ACTION_CONNECTION_STATES = %w[
     SCARequired
@@ -32,11 +32,6 @@ class PowensItem < ApplicationRecord
 
   def provider
     Provider::PowensAdapter.build_provider
-  end
-
-  def destroy_later
-    update!(scheduled_for_deletion: true)
-    DestroyJob.perform_later(self)
   end
 
   def import_latest_powens_data(sync: nil, sync_connection: false, wait_for_source_refresh: false)

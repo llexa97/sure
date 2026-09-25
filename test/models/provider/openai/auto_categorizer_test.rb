@@ -3,16 +3,16 @@ require "test_helper"
 class Provider::Openai::AutoCategorizerTest < ActiveSupport::TestCase
   test "uses default detailed_instructions when family has no custom override" do
     family = families(:dylan_family)
-    family.update!(custom_auto_categorizer_instructions: nil)
+    family.update!(ai_prompt_categorizer_openai: nil)
 
     categorizer = Provider::Openai::AutoCategorizer.new(nil, family: family)
 
     assert_includes categorizer.instructions, "consumer personal finance app"
   end
 
-  test "prefers family.custom_auto_categorizer_instructions when set" do
+  test "prefers family.ai_prompt_categorizer_openai when set" do
     family = families(:dylan_family)
-    family.update!(custom_auto_categorizer_instructions: "Only return JSON, no other text.")
+    family.update!(ai_prompt_categorizer_openai: "Only return JSON, no other text.")
 
     categorizer = Provider::Openai::AutoCategorizer.new(nil, family: family)
 
@@ -21,7 +21,7 @@ class Provider::Openai::AutoCategorizerTest < ActiveSupport::TestCase
 
   test "blank custom override falls back to default" do
     family = families(:dylan_family)
-    family.update!(custom_auto_categorizer_instructions: "")
+    family.update!(ai_prompt_categorizer_openai: "")
 
     categorizer = Provider::Openai::AutoCategorizer.new(nil, family: family)
 

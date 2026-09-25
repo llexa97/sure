@@ -2,41 +2,38 @@ class Settings::AiPromptsController < ApplicationController
   layout "settings"
 
   before_action :require_admin!
-  before_action :set_family
 
   def show
     @breadcrumbs = [
       [ t("breadcrumbs.home"), root_path ],
       [ t("breadcrumbs.ai_prompts"), nil ]
     ]
-    @default_assistant_instructions = Assistant::Builtin.default_instructions_for(@family)
-    @default_auto_categorizer_instructions = Provider::Openai::AutoCategorizer
-      .new(nil, family: nil)
-      .instructions
-    @default_auto_merchant_detector_instructions = Provider::Openai::AutoMerchantDetector
-      .new(nil, transactions: [], user_merchants: [], family: nil)
-      .instructions
+    @family ||= Current.family
   end
 
   def update
-    if @family.update(family_params)
-      redirect_to settings_ai_prompts_path, notice: t(".updated")
-    else
-      redirect_to settings_ai_prompts_path, alert: @family.errors.full_messages.to_sentence
-    end
+    Current.family.update!(prompt_params)
+
+    redirect_to settings_ai_prompts_path, notice: t(".success")
+  rescue ActiveRecord::RecordInvalid => e
+    # Re-render rather than redirect so a rejected edit doesn't discard what the
+    # admin typed into a multi-thousand-character textarea.
+    flash.now[:alert] = error_message_for(e.record)
+    @family = e.record
+    show
+    render :show, status: :unprocessable_entity
   end
 
   private
-
-    def set_family
-      @family = Current.family
+    def error_message_for(record)
+      if record.errors.size > 1
+        t(".multiple_errors", count: Family::AiPromptable::MAX_LENGTH.to_fs(:delimited))
+      else
+        record.errors.full_messages.first
+      end
     end
 
-    def family_params
-      params.require(:family).permit(
-        :custom_assistant_instructions,
-        :custom_auto_categorizer_instructions,
-        :custom_auto_merchant_detector_instructions
-      )
+    def prompt_params
+      params.require(:family).permit(*Family::AiPromptable::FIELDS)
     end
 end

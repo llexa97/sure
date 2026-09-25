@@ -11,62 +11,70 @@ class Settings::AiPromptsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  test "updates custom assistant instructions" do
-    patch settings_ai_prompts_url, params: {
-      family: { custom_assistant_instructions: "You are a pirate." }
-    }
-
-    assert_redirected_to settings_ai_prompts_url
-    assert_equal "You are a pirate.", @user.family.reload.custom_assistant_instructions
-  end
-
-  test "updates custom auto categorizer instructions" do
-    patch settings_ai_prompts_url, params: {
-      family: { custom_auto_categorizer_instructions: "Return only JSON." }
-    }
-
-    assert_redirected_to settings_ai_prompts_url
-    assert_equal "Return only JSON.", @user.family.reload.custom_auto_categorizer_instructions
-  end
-
-  test "updates custom auto merchant detector instructions" do
-    patch settings_ai_prompts_url, params: {
-      family: { custom_auto_merchant_detector_instructions: "Detect merchants." }
-    }
-
-    assert_redirected_to settings_ai_prompts_url
-    assert_equal "Detect merchants.", @user.family.reload.custom_auto_merchant_detector_instructions
-  end
-
-  test "clearing a custom instruction restores default behavior" do
-    @user.family.update!(custom_assistant_instructions: "Some override")
-
-    patch settings_ai_prompts_url, params: {
-      family: { custom_assistant_instructions: "" }
-    }
-
-    assert_redirected_to settings_ai_prompts_url
-    assert_equal "", @user.family.reload.custom_assistant_instructions
-  end
-
-  test "non-admin cannot view or update" do
-    sign_in users(:family_member)
-
-    get settings_ai_prompts_url
-    assert_redirected_to accounts_path
-    assert_equal I18n.t("shared.require_admin"), flash[:alert]
-
-    patch settings_ai_prompts_url, params: {
-      family: { custom_assistant_instructions: "should not save" }
-    }
-    assert_redirected_to accounts_path
-    assert_nil users(:family_member).family.reload.custom_assistant_instructions
-  end
-
   test "guest cannot view family AI prompts" do
     sign_in users(:intro_user)
     get settings_ai_prompts_path
     assert_redirected_to accounts_path
     assert_equal I18n.t("shared.require_admin"), flash[:alert]
+  end
+
+  test "admin can update family AI prompts" do
+    admin = users(:family_admin)
+    sign_in admin
+
+    patch settings_ai_prompts_path, params: { family: { ai_prompt_chat_system: "Be terse." } }
+
+    assert_redirected_to settings_ai_prompts_path
+    assert_equal "Be terse.", admin.family.reload.ai_prompt(:chat_system)
+  end
+
+  test "a blank prompt resets the family back to the built-in default" do
+    admin = users(:family_admin)
+    admin.family.update!(ai_prompt_chat_system: "Be terse.")
+    sign_in admin
+
+    patch settings_ai_prompts_path, params: { family: { ai_prompt_chat_system: "" } }
+
+    assert_redirected_to settings_ai_prompts_path
+    assert_nil admin.family.reload.ai_prompt(:chat_system)
+  end
+
+  test "non-admin member cannot update family AI prompts" do
+    member = users(:family_member)
+    sign_in member
+
+    patch settings_ai_prompts_path, params: { family: { ai_prompt_chat_system: "Be terse." } }
+
+    assert_redirected_to accounts_path
+    assert_nil member.family.reload.ai_prompt(:chat_system)
+  end
+
+  test "rejects a prompt over the length cap and re-renders the form with single error message" do
+    admin = users(:family_admin)
+    sign_in admin
+
+    patch settings_ai_prompts_path, params: {
+      family: { ai_prompt_chat_system: "x" * (Family::AiPromptable::MAX_LENGTH + 1) }
+    }
+
+    assert_response :unprocessable_entity
+    assert_equal "Chat system prompt is too long (maximum is 20,000 characters)", flash[:alert]
+    assert_nil admin.family.reload.ai_prompt(:chat_system)
+  end
+
+  test "rejects multiple prompts over the length cap with multiple error message" do
+    admin = users(:family_admin)
+    sign_in admin
+
+    patch settings_ai_prompts_path, params: {
+      family: {
+        ai_prompt_chat_system: "x" * (Family::AiPromptable::MAX_LENGTH + 1),
+        ai_prompt_categorizer_openai: "x" * (Family::AiPromptable::MAX_LENGTH + 1)
+      }
+    }
+
+    assert_response :unprocessable_entity
+    assert_equal "Multiple prompts are too long (maximum is 20,000 characters)", flash[:alert]
+    assert_nil admin.family.reload.ai_prompt(:chat_system)
   end
 end

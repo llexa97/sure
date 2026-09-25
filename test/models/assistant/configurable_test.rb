@@ -19,25 +19,6 @@ class AssistantConfigurableTest < ActiveSupport::TestCase
     assert_includes config[:instructions], "stage of life"
   end
 
-  test "prefers family custom_assistant_instructions when set" do
-    chat = chats(:one)
-    chat.user.family.update!(custom_assistant_instructions: "You are a pirate. Answer in pirate-speak.")
-
-    config = Assistant.config_for(chat)
-
-    assert_equal "You are a pirate. Answer in pirate-speak.", config[:instructions]
-    assert_not_empty config[:functions]
-  end
-
-  test "blank custom_assistant_instructions falls back to default" do
-    chat = chats(:one)
-    chat.user.family.update!(custom_assistant_instructions: "")
-
-    config = Assistant.config_for(chat)
-
-    assert_includes config[:instructions], "You help users understand their financial data"
-  end
-
   test "instructions start with the byte-stable static block and end with session context" do
     chat = chats(:one)
 
@@ -45,6 +26,18 @@ class AssistantConfigurableTest < ActiveSupport::TestCase
 
     assert instructions.start_with?(Assistant::Configurable::STATIC_INSTRUCTIONS)
     assert_operator instructions.index("## Session context"), :>, instructions.index("### Rules about financial advice")
+    assert_includes instructions, "Today's date: #{Date.current}"
+  end
+
+  test "a family's chat_system override replaces the static block but keeps session context" do
+    chat = chats(:one)
+    chat.user.family.update!(ai_prompt_chat_system: "CUSTOM IDENTITY")
+
+    instructions = Assistant.config_for(chat)[:instructions]
+
+    assert instructions.start_with?("CUSTOM IDENTITY")
+    assert_not_includes instructions, "You help users understand their financial data"
+    assert_includes instructions, "## Session context"
     assert_includes instructions, "Today's date: #{Date.current}"
   end
 

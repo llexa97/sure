@@ -23,6 +23,7 @@ class BinanceAccount::ProcessorTest < ActiveSupport::TestCase
     AccountProvider.create!(account: @account, provider: @ba)
 
     BinanceAccount::HoldingsProcessor.any_instance.stubs(:process).returns(nil)
+    BinanceAccount::Processor.any_instance.stubs(:fetch_and_process_auto_invest).returns(nil)
     @ba.stubs(:binance_item).returns(
       stub(binance_provider: nil, family: @family)
     )
