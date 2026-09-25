@@ -17,6 +17,26 @@ class PowensItemsControllerTest < ActionDispatch::IntegrationTest
     )
   end
 
+  test "create redirects to the Powens portal with a server-generated callback and state" do
+    provider = Provider::Powens.new(domain: "demo-sandbox", client_id: "client", client_secret: "secret")
+    Provider::PowensAdapter.stubs(:build_provider).returns(provider)
+    provider.expects(:create_user_token).returns(auth_token: "new-token", id_user: "43")
+    provider.expects(:generate_temporary_code).with("new-token", type: "singleAccess").returns(code: "temporary")
+
+    assert_difference "Current.family.powens_items.count", 1 do
+      post powens_items_url, params: { redirect_uri: "https://example.org", state: "untrusted" }
+    end
+
+    assert_response :redirect
+    uri = URI.parse(response.location)
+    assert_equal "https", uri.scheme
+    assert_equal "webview.powens.com", uri.host
+    params = Rack::Utils.parse_query(uri.query)
+    assert_equal callback_powens_items_url, params["redirect_uri"]
+    assert_equal Current.family.powens_items.find_by!(user_id: "43").reference, params["state"]
+    assert_not_equal "untrusted", params["state"]
+  end
+
   test "callback processes linked accounts after a successful reconnect import" do
     PowensItem.any_instance
       .expects(:import_latest_powens_data)
@@ -49,12 +69,15 @@ class PowensItemsControllerTest < ActionDispatch::IntegrationTest
     provider.expects(:get_connection).returns(id: 99, sources: [ { name: "directaccess", state: "SCARequired" } ])
     provider.expects(:generate_temporary_code).returns(code: "temporary")
 
-    get reconnect_powens_item_url(@powens_item)
+    get reconnect_powens_item_url(@powens_item), params: { redirect_uri: "https://example.org", state: "untrusted" }
 
     assert_response :redirect
     uri = URI.parse(response.location)
+    assert_equal "https", uri.scheme
     assert_equal "webview.powens.com", uri.host
     params = Rack::Utils.parse_query(uri.query)
+    assert_equal callback_powens_items_url, params["redirect_uri"]
+    assert_equal @powens_item.reference, params["state"]
     assert_equal "99", params["connection_id"]
     assert_nil params["reset_credentials"]
     assert_nil params["connection_sources"]

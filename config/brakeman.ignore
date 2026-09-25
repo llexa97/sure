@@ -215,6 +215,52 @@
       "user_input": ":account_id",
       "confidence": "High",
       "note": "account_id is never mass-assigned: build_declared_bill resolves it through Current.user.accessible_accounts.find_by, so a foreign id degrades to no account rather than an association write."
+    },
+    {
+      "warning_type": "Redirect",
+      "warning_code": 18,
+      "fingerprint": "1f3183515263cc59fe4ec22a939bd43e6d4698f7c0a940d139eff0a8ba603429",
+      "check_name": "Redirect",
+      "message": "Possible unprotected redirect",
+      "file": "app/controllers/powens_items_controller.rb",
+      "line": 77,
+      "link": "https://brakemanscanner.org/docs/warning_types/redirect/",
+      "code": "redirect_to(Provider::PowensAdapter.build_provider.reconnect_webview_url(:redirect_uri => callback_powens_items_url, :code => Provider::PowensAdapter.build_provider.generate_temporary_code(Current.family.powens_items.find(params[:id]).access_token, :type => \"singleAccess\")[:code], :connection_id => Current.family.powens_items.find(params[:id]).connection_id, :state => Current.family.powens_items.find(params[:id]).reference, :lang => I18n.locale), :allow_other_host => true)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "PowensItemsController",
+        "method": "reconnect"
+      },
+      "user_input": "Provider::PowensAdapter.build_provider.reconnect_webview_url(:redirect_uri => callback_powens_items_url, :code => Provider::PowensAdapter.build_provider.generate_temporary_code(Current.family.powens_items.find(params[:id]).access_token, :type => \"singleAccess\")[:code], :connection_id => Current.family.powens_items.find(params[:id]).connection_id, :state => Current.family.powens_items.find(params[:id]).reference, :lang => I18n.locale)",
+      "confidence": "Weak",
+      "cwe_id": [
+        601
+      ],
+      "note": "Intentional redirect to the Powens external bank-connection portal. PowensAdapter.build_provider uses the fixed HTTPS webview.powens.com base URL; the callback is a Rails named route and state is generated server-side or loaded from the current family connection. Provider values are URL-encoded query parameters, not the redirect host. Controller tests cover both create and reconnect, including hostile redirect_uri/state request parameters."
+    },
+    {
+      "warning_type": "Redirect",
+      "warning_code": 18,
+      "fingerprint": "e6648a1dc6546bbaa142b2146667d68086353298b93c2e8fd45a871d3cb59c81",
+      "check_name": "Redirect",
+      "message": "Possible unprotected redirect",
+      "file": "app/controllers/powens_items_controller.rb",
+      "line": 23,
+      "link": "https://brakemanscanner.org/docs/warning_types/redirect/",
+      "code": "redirect_to(Provider::PowensAdapter.build_provider.connect_webview_url(:redirect_uri => callback_powens_items_url, :code => Provider::PowensAdapter.build_provider.generate_temporary_code(Current.family.create_powens_item!(:auth_token => Provider::PowensAdapter.build_provider.create_user_token[:auth_token], :user_id => Provider::PowensAdapter.build_provider.create_user_token[:id_user], :reference => SecureRandom.uuid, :raw_payload => Provider::PowensAdapter.build_provider.create_user_token).access_token, :type => \"singleAccess\")[:code], :state => SecureRandom.uuid, :lang => I18n.locale), :allow_other_host => true)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "PowensItemsController",
+        "method": "create"
+      },
+      "user_input": "Provider::PowensAdapter.build_provider.connect_webview_url(:redirect_uri => callback_powens_items_url, :code => Provider::PowensAdapter.build_provider.generate_temporary_code(Current.family.create_powens_item!(:auth_token => Provider::PowensAdapter.build_provider.create_user_token[:auth_token], :user_id => Provider::PowensAdapter.build_provider.create_user_token[:id_user], :reference => SecureRandom.uuid, :raw_payload => Provider::PowensAdapter.build_provider.create_user_token).access_token, :type => \"singleAccess\")[:code], :state => SecureRandom.uuid, :lang => I18n.locale)",
+      "confidence": "Weak",
+      "cwe_id": [
+        601
+      ],
+      "note": "Intentional redirect to the Powens external bank-connection portal. PowensAdapter.build_provider uses the fixed HTTPS webview.powens.com base URL; the callback is a Rails named route and state is generated server-side or loaded from the current family connection. Provider values are URL-encoded query parameters, not the redirect host. Controller tests cover both create and reconnect, including hostile redirect_uri/state request parameters."
     }
   ],
   "brakeman_version": "7.1.0"
