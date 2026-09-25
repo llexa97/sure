@@ -1,9 +1,22 @@
 name: Desktop Build
 
-# Build the macOS desktop app as part of the normal Sure release. The caller
-# supplies the v* release ref, so desktop versions cannot diverge independently.
+# Build downloadable macOS artifacts from main or manually, and reuse the same
+# build for normal Sure releases. All builds take their version from .sure-version.
 on:
   workflow_call:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'desktop/**'
+      - '.sure-version'
+      - '.github/workflows/desktop-release.yml'
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - '.sure-version'
+      - '.github/workflows/desktop-release.yml'
 
 permissions:
   contents: read
@@ -18,21 +31,23 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Resolve and verify release version
+      - name: Resolve version and verify release tags
         id: ver
         shell: bash
         run: |
           set -euo pipefail
           VERSION="$(tr -d '[:space:]' < .sure-version)"
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
 
           if [ -z "$VERSION" ]; then
             echo "::error::.sure-version is empty or unreadable"
             exit 1
           fi
-          if [ "$VERSION" != "$TAG_VERSION" ]; then
-            echo "::error::.sure-version ($VERSION) does not match release tag (v$TAG_VERSION)"
-            exit 1
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            if [ "$VERSION" != "$TAG_VERSION" ]; then
+              echo "::error::.sure-version ($VERSION) does not match release tag (v$TAG_VERSION)"
+              exit 1
+            fi
           fi
           echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$' \
             || { echo "::error::invalid version '$VERSION'"; exit 1; }
@@ -79,4 +94,4 @@ jobs:
           name: desktop-release-dmg
           path: desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 30

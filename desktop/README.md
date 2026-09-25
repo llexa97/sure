@@ -34,7 +34,14 @@ The desktop build runs automatically as part of the normal Sure `v*` release.
 The version comes from `.sure-version` and must match the release tag; it is
 stamped into `desktop/package.json` and `desktop/src-tauri/tauri.conf.json`
 only while building. The universal `.dmg` is attached to that same GitHub
-Release—there is no separate desktop action, tag, or version.
+Release.
+
+The **Desktop Build** workflow also runs when desktop code, `.sure-version`, or
+the workflow changes on `main` or in a pull request. It can be started manually
+from GitHub Actions with **Run workflow**. Branch builds use `.sure-version`
+without requiring a release tag. Download the `desktop-release-dmg` artifact
+from the completed run, unzip it, and open the universal `.dmg` (Apple Silicon
+and Intel). Artifacts remain available for 30 days.
 
 ## Installing an unsigned build (end users)
 The published `.dmg` is **not code-signed**, so macOS Gatekeeper blocks the first
