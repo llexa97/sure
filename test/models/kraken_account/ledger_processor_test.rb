@@ -200,6 +200,61 @@ class KrakenAccount::LedgerProcessorTest < ActiveSupport::TestCase
     end
   end
 
+  test "imports a paired EUR to BTC conversion once as a buy trade" do
+    security = Security.create!(ticker: "CRYPTO:BTC", name: "BTC", exchange_operating_mic: "XKRA", offline: true)
+    KrakenAccount::SecurityResolver.stubs(:resolve).returns(security)
+    set_ledgers(
+      "LSPEND" => ledger_entry(type: "spend", asset: "ZEUR", amount: "-100.00", fee: "1.00", time: 1_700_000_000).merge("refid" => "CONVERSION1"),
+      "LRECEIVE" => ledger_entry(type: "receive", asset: "XXBT", amount: "0.002", fee: "0", time: 1_700_000_000).merge("refid" => "CONVERSION1")
+    )
+
+    assert_difference "@account.entries.count", 1 do
+      process
+    end
+
+    entry = @account.entries.find_by!(external_id: "kraken_conversion_CONVERSION1")
+    assert_equal "Trade", entry.entryable_type
+    assert_equal(-100.to_d, entry.amount)
+    assert_equal "EUR", entry.currency
+    assert_equal 0.002.to_d, entry.trade.qty
+    assert_equal 50_000.to_d, entry.trade.price
+    assert_equal 1.to_d, entry.trade.fee
+    assert_equal "Buy", entry.trade.investment_activity_label
+    assert_equal "LSPEND", entry.trade.extra.dig("kraken", "spend_ledger_id")
+
+    assert_no_difference "@account.entries.count" do
+      process
+    end
+  end
+
+  test "imports a paired BTC to EUR conversion as a sell trade" do
+    security = Security.create!(ticker: "CRYPTO:BTC", name: "BTC", exchange_operating_mic: "XKRA", offline: true)
+    KrakenAccount::SecurityResolver.stubs(:resolve).returns(security)
+    set_ledgers(
+      "LSPEND" => ledger_entry(type: "spend", asset: "XXBT", amount: "-0.002", fee: "0", time: 1_700_000_000).merge("refid" => "CONVERSION2"),
+      "LRECEIVE" => ledger_entry(type: "receive", asset: "ZEUR", amount: "99.00", fee: "1.00", time: 1_700_000_000).merge("refid" => "CONVERSION2")
+    )
+
+    process
+
+    entry = @account.entries.find_by!(external_id: "kraken_conversion_CONVERSION2")
+    assert_equal 99.to_d, entry.amount
+    assert_equal(-0.002.to_d, entry.trade.qty)
+    assert_equal 49_500.to_d, entry.trade.price
+    assert_equal 1.to_d, entry.trade.fee
+    assert_equal "Sell", entry.trade.investment_activity_label
+  end
+
+  test "does not import an incomplete conversion" do
+    set_ledgers(
+      "LSPEND" => ledger_entry(type: "spend", asset: "ZEUR", amount: "-100.00", fee: "1.00", time: 1_700_000_000).merge("refid" => "INCOMPLETE")
+    )
+
+    assert_no_difference "@account.entries.count" do
+      process
+    end
+  end
+
   # ---------------------------------------------------------------------------
   # idempotency
   # ---------------------------------------------------------------------------

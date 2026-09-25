@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-# Processes Kraken Ledger entries (deposits, withdrawals, staking rewards, Earn
-# income, standalone fees) stored in KrakenAccount#raw_transactions_payload["ledgers"].
+# Processes Kraken Ledger entries (conversions, deposits, withdrawals, staking
+# rewards, Earn income, standalone fees) stored in the account snapshot.
 #
 # Kraken TradesHistory already handles spot buy/sell trades; ledger entries with
 # type="trade" are therefore skipped here to avoid double-counting.  Internal
@@ -33,12 +33,14 @@ class KrakenAccount::LedgerProcessor
     # Idempotency: load existing Kraken *ledger* external IDs once and test
     # membership in memory, instead of an EXISTS query per ledger entry (a full
     # sync can carry up to ~10k entries — see MAX_LEDGER_PAGES in the importer).
-    # Scoped to the kraken_ledger_ prefix so trade entries aren't loaded.
+    # Include conversion IDs in the same query so replaying a snapshot stays cheap.
     @existing_external_ids = account.entries
                                     .where(source: "kraken")
-                                    .where("external_id LIKE 'kraken_ledger_%'")
+                                    .where("external_id LIKE 'kraken_ledger_%' OR external_id LIKE 'kraken_conversion_%'")
                                     .pluck(:external_id)
                                     .to_set
+
+    process_conversions
 
     raw_ledgers.each do |ledger_id, ledger|
       process_ledger_entry(ledger_id, ledger)
@@ -73,6 +75,81 @@ class KrakenAccount::LedgerProcessor
 
     def raw_ledgers
       kraken_account.raw_transactions_payload&.dig("ledgers") || {}
+    end
+
+    def process_conversions
+      raw_ledgers.group_by { |_id, ledger| ledger["refid"] }.each do |refid, rows|
+        next if refid.blank? || rows.size != 2
+
+        spend_row = rows.find { |_id, ledger| ledger["type"] == "spend" }
+        receive_row = rows.find { |_id, ledger| ledger["type"] == "receive" }
+        next unless spend_row && receive_row
+
+        process_conversion(refid, spend_row, receive_row)
+      rescue StandardError => e
+        DebugLogEntry.capture(
+          category: "provider_sync_error",
+          level: "error",
+          message: "Failed to process conversion #{refid}: #{e.message}",
+          source: self.class.name,
+          provider_key: "kraken",
+          family: kraken_account.kraken_item&.family,
+          metadata: { refid: refid, error_class: e.class.name }
+        )
+      end
+    end
+
+    def process_conversion(refid, spend_row, receive_row)
+      external_id = "kraken_conversion_#{refid}"
+      return if @existing_external_ids.include?(external_id)
+
+      spend_id, spend = spend_row
+      receive_id, receive = receive_row
+      spent_symbol = normalizer.normalize(spend["asset"])[:symbol]
+      received_symbol = normalizer.normalize(receive["asset"])[:symbol]
+      spent = spend["amount"].to_d
+      received = receive["amount"].to_d
+      return unless spent.negative? && received.positive?
+
+      if fiat_currency?(spent_symbol) && !fiat_currency?(received_symbol)
+        type, symbol, currency = "buy", received_symbol, spent_symbol
+        qty, cost = received, -spent
+        fee = spend["fee"].to_d
+      elsif !fiat_currency?(spent_symbol) && fiat_currency?(received_symbol)
+        type, symbol, currency = "sell", spent_symbol, received_symbol
+        qty, cost = -spent, received
+        fee = receive["fee"].to_d
+      else
+        return
+      end
+      return if qty.zero? || cost.zero?
+
+      security = KrakenAccount::SecurityResolver.resolve("CRYPTO:#{symbol}", symbol)
+      return unless security
+
+      label = type == "buy" ? "Buy" : "Sell"
+      account.entries.create!(
+        date: Time.zone.at(receive["time"].to_d).to_date,
+        name: "#{label} #{qty.round(8)} #{symbol}",
+        amount: type == "buy" ? -cost : cost,
+        currency: currency,
+        external_id: external_id,
+        source: "kraken",
+        entryable: Trade.new(
+          security: security,
+          qty: type == "buy" ? qty : -qty,
+          price: cost / qty,
+          currency: currency,
+          fee: fee,
+          investment_activity_label: label,
+          extra: { "kraken" => { "refid" => refid, "spend_ledger_id" => spend_id, "receive_ledger_id" => receive_id } }
+        )
+      )
+      @existing_external_ids << external_id
+    end
+
+    def fiat_currency?(symbol)
+      KrakenAccount::FIAT_CURRENCIES.include?(symbol)
     end
 
     def process_ledger_entry(ledger_id, ledger)
