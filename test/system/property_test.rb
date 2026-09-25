@@ -12,7 +12,7 @@ class PropertiesEditTest < ApplicationSystemTestCase
   end
 
   test "can persist property subtype" do
-    click_link "[system test] Property Account"
+    assert_selector "h2", text: "[system test] Property Account"
     open_account_edit_dialog
     assert_field "account_accountable_attributes_subtype", with: "single_family_home"
   end

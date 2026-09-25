@@ -160,7 +160,8 @@ class AccountsTest < ApplicationSystemTestCase
 
       within_testid("account-sidebar-tabs") do
         click_on "All"
-        find("details", text: Accountable.from_type(accountable_type).display_name).click
+        group = find("[data-group-key='#{accountable_type.underscore}'] > details")
+        group.find(":scope > summary").click unless group[:open]
         assert_text account_name
       end
 
