@@ -413,6 +413,46 @@ class HoldingTest < ActiveSupport::TestCase
     assert_equal 1, @account.trades.where(security: old_security).count
   end
 
+  test "reset_security_to_provider! replaces a colliding calculated holding with the provider snapshot" do
+    provider_security = @amzn.security
+    remapped_security = create_security("GOOG", prices: [ { date: Date.current, price: 100.00 } ])
+    provider_qty = @amzn.qty
+    provider_amount = @amzn.amount
+
+    coinstats_item = families(:empty).coinstats_items.create!(name: "CoinStats", api_key: "test-key")
+    coinstats_account = coinstats_item.coinstats_accounts.create!(name: "Brokerage", currency: "USD")
+    account_provider = AccountProvider.create!(account: @account, provider: coinstats_account)
+
+    @amzn.update!(account_provider: account_provider, external_id: "provider-amzn")
+    @amzn.remap_security!(remapped_security)
+
+    calculated_holding = @account.holdings.create!(
+      security: provider_security,
+      date: @amzn.date,
+      currency: @amzn.currency,
+      qty: 0,
+      price: 215,
+      amount: 0,
+      cost_basis: 210,
+      cost_basis_source: "calculated"
+    )
+
+    @amzn.reset_security_to_provider!
+
+    @amzn.reload
+    assert_equal provider_security, @amzn.security
+    assert_equal Money.new(216, "USD"), @amzn.security.current_price
+    assert_equal provider_qty, @amzn.qty
+    assert_equal provider_amount, @amzn.amount
+    assert_equal BigDecimal("210"), @amzn.cost_basis
+    assert_equal "calculated", @amzn.cost_basis_source
+    assert_equal account_provider, @amzn.account_provider
+    assert_equal "provider-amzn", @amzn.external_id
+    assert_not @amzn.security_locked?
+    assert_nil @amzn.provider_security_id
+    assert_not Holding.exists?(calculated_holding.id)
+  end
+
   test "reset_security_to_provider! does nothing if not remapped" do
     old_security = @amzn.security
     @amzn.reset_security_to_provider!
@@ -454,4 +494,68 @@ class HoldingTest < ActiveSupport::TestCase
         amount: qty * price,
         currency: "USD"
     end
+
+    # A coin bought elsewhere at one price and moved in at another was never
+    # bought here, so counting the day it arrived as its cost reports a gain of
+    # zero on a position that may have doubled.
+    test "an internal movement does not set the cost basis" do
+      holding = holdings(:one)
+
+      Trade::INTERNAL_MOVEMENT_LABELS.each do |label|
+        holding.account.trades.each { |trade| trade.update!(investment_activity_label: label) }
+
+        assert_nil holding.avg_cost,
+          "a position moved by #{label} has no cost basis this app can know"
+      end
+    end
+
+    # `!=` is NULL for an unlabelled row, so a naive exclusion drops the ordinary
+    # purchases that carry no label — which is most of them.
+    test "an unlabelled purchase still sets it" do
+      holding = holdings(:one)
+      holding.account.trades.each { |t| t.update!(investment_activity_label: nil) }
+
+      assert_not_nil holding.avg_cost
+    end
+
+    # Averaging the purchases alone and applying that to every unit is the same
+    # fabrication in a quieter form.
+    test "a position mixing a purchase and a transfer has no knowable cost" do
+      holding = holdings(:one)
+      holding.account.trades.each { |t| t.update!(investment_activity_label: "Buy") }
+
+      holding.account.entries.create!(
+        date: holding.date - 1,
+        name: "Received 1 unit",
+        amount: -100,
+        currency: holding.currency,
+        entryable: Trade.new(
+          security: holding.security,
+          qty: 1,
+          price: 100,
+          currency: holding.currency,
+          investment_activity_label: Trade::TRANSFER_LABEL
+        )
+      )
+
+      assert_nil holding.avg_cost
+    end
+
+    # A figure the user typed is theirs, not ours to discard: they are saying
+    # what the position cost them, which is exactly what the app cannot work
+    # out on its own for a transfer.
+    test "a cost basis the user set survives a transfer" do
+      holding = holdings(:one)
+      holding.account.trades.each { |t| t.update!(investment_activity_label: Trade::TRANSFER_LABEL) }
+      holding.update_columns(cost_basis: 100, cost_basis_source: "manual")
+
+      assert_equal 100, holding.reload.avg_cost.amount.to_d
+    end
+
+    test "a purchase still sets it" do
+        holding = holdings(:one)
+        holding.account.trades.each { |t| t.update!(investment_activity_label: "Buy") }
+
+        assert_not_nil holding.avg_cost
+      end
 end

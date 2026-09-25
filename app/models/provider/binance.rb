@@ -82,10 +82,30 @@ class Provider::Binance
 
   # Signed trade history for a single symbol, e.g. "BTCUSDT".
   # Pass from_id to fetch only trades with id >= from_id (for incremental sync).
-  def get_spot_trades(symbol, limit: 1000, from_id: nil)
+  # Pass start_time/end_time (epoch ms) to fetch a bounded window instead; Binance
+  # rejects from_id combined with start_time/end_time, so callers use one or the other.
+  def get_spot_trades(symbol, limit: 1000, from_id: nil, start_time: nil, end_time: nil)
     params = { "symbol" => symbol, "limit" => limit.to_s }
     params["fromId"] = from_id.to_s if from_id
+    params["startTime"] = start_time.to_s if start_time
+    params["endTime"] = end_time.to_s if end_time
     signed_get("/api/v3/myTrades", extra_params: params)
+  end
+
+  # Lists Auto-Invest plans for the authenticated user.
+  # @param plan_type [String] "PORTFOLIO" or "SINGLE"
+  def get_auto_invest_plans(plan_type:)
+    signed_get("/sapi/v1/lending/auto-invest/plan/list", extra_params: { "planType" => plan_type })
+  end
+
+  # Returns the execution history of an Auto-Invest plan.
+  # Binance paginates; callers should walk pages via the `current` parameter
+  # until `list.size < size` is observed.
+  def get_auto_invest_history(plan_id:, current: 1, size: 100)
+    signed_get(
+      "/sapi/v1/lending/auto-invest/history/list",
+      extra_params: { "planId" => plan_id.to_s, "size" => size.to_s, "current" => current.to_s }
+    )
   end
 
   # USDⓈ-M Futures account — requires signed request
@@ -94,9 +114,11 @@ class Provider::Binance
   end
 
   # Futures trade history for a single symbol
-  def get_futures_trades(symbol, limit: 1000, from_id: nil)
+  def get_futures_trades(symbol, limit: 1000, from_id: nil, start_time: nil, end_time: nil)
     params = { "symbol" => symbol, "limit" => limit.to_s }
     params["fromId"] = from_id.to_s if from_id
+    params["startTime"] = start_time.to_s if start_time
+    params["endTime"] = end_time.to_s if end_time
     signed_get("/fapi/v1/userTrades", extra_params: params, base_url: FUTURES_BASE_URL)
   end
 
@@ -141,10 +163,9 @@ class Provider::Binance
       params = timestamp_params.merge(extra_params)
       query_string = URI.encode_www_form(params.sort)
 
-      full_url = "#{base_url}#{path}"
-
       response = self.class.get(
-        full_url,
+        path,
+        base_uri: base_url,
         query: "#{query_string}&signature=#{sign(query_string)}",
         headers: auth_headers
       )

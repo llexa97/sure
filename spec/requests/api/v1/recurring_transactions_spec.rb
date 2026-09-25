@@ -74,6 +74,7 @@ RSpec.describe 'API V1 Recurring Transactions', type: :request do
 
   path '/api/v1/recurring_transactions' do
     get 'List recurring transactions' do
+      description 'Returns dates aligned with Bills, ordered by status and effective next due date before pagination.'
       tags 'Recurring Transactions'
       security [ { apiKeyAuth: [] } ]
       produces 'application/json'
@@ -132,6 +133,9 @@ RSpec.describe 'API V1 Recurring Transactions', type: :request do
               status: { type: :string, enum: %w[active inactive] },
               occurrence_count: { type: :integer, minimum: 0 },
               manual: { type: :boolean },
+              payment_url: { type: :string, nullable: true, description: 'Link to the biller portal. Only http and https are accepted; a bare host is stored as https.' },
+              autopay: { type: :boolean, description: 'Whether this bill pays itself automatically.' },
+              notes: { type: :string, nullable: true, description: 'Free-text notes shown alongside the bill.' },
               expected_amount_min: { type: :number, nullable: true },
               expected_amount_max: { type: :number, nullable: true },
               expected_amount_avg: { type: :number, nullable: true }
@@ -269,6 +273,7 @@ RSpec.describe 'API V1 Recurring Transactions', type: :request do
     parameter name: :id, in: :path, type: :string, required: true, description: 'Recurring transaction ID'
 
     get 'Retrieve recurring transaction' do
+      description 'The next_expected_date response follows the earliest open Bills occurrence, rather than a stale stored prediction.'
       tags 'Recurring Transactions'
       security [ { apiKeyAuth: [] } ]
       produces 'application/json'
@@ -314,7 +319,10 @@ RSpec.describe 'API V1 Recurring Transactions', type: :request do
             properties: {
               status: { type: :string, enum: %w[active inactive] },
               expected_day_of_month: { type: :integer, minimum: 1, maximum: 31 },
-              next_expected_date: { type: :string, format: :date }
+              next_expected_date: { type: :string, format: :date },
+              payment_url: { type: :string, nullable: true, description: 'Link to the biller portal. Only http and https are accepted; a bare host is stored as https. Send an empty string to clear it.' },
+              autopay: { type: :boolean, description: 'Whether this bill pays itself automatically.' },
+              notes: { type: :string, nullable: true, description: 'Free-text notes shown alongside the bill.' }
             }
           }
         }

@@ -1,0 +1,133 @@
+<% title t("analyses.show.title") %>
+
+<% content_for :page_header do %>
+  <div class="@container space-y-5 mb-6">
+    <header class="flex flex-col gap-4 @lg:flex-row @lg:items-start @lg:justify-between">
+      <div class="space-y-1">
+        <h1 class="text-xl lg:text-3xl font-medium text-primary"><%= t("analyses.show.title") %></h1>
+        <p class="text-sm lg:text-base text-secondary"><%= t("analyses.show.subtitle") %></p>
+      </div>
+
+      <%= render DS::SegmentedControl.new(
+        aria_label: t("analyses.show.period_aria_label"),
+        class: "overflow-x-auto no-scrollbar shrink-0"
+      ) do |control| %>
+        <% Analysis::Cashflow::PERIOD_TYPES.each do |period_type| %>
+          <% control.with_segment(
+            t("analyses.show.periods.#{period_type}"),
+            active: @analysis.period_type == period_type,
+            href: analysis_path(
+              period_type: period_type,
+              anchor_date: @analysis.anchor_date.iso8601,
+              cashflow_year: @analysis.cashflow_year
+            )
+          ) %>
+        <% end %>
+      <% end %>
+    </header>
+
+    <div class="flex items-center justify-center gap-3">
+      <%= render DS::Link.new(
+        variant: "icon",
+        icon: "chevron-left",
+        href: analysis_path(
+          period_type: @analysis.period_type,
+          anchor_date: @analysis.previous_anchor_date.iso8601,
+          cashflow_year: @analysis.cashflow_year
+        ),
+        aria: { label: t("analyses.show.previous_period") }
+      ) %>
+
+      <div class="min-w-48 text-center">
+        <div class="flex items-center justify-center gap-2">
+          <p class="font-medium text-primary"><%= @analysis.period_label %></p>
+          <% if @analysis.latest_period? %>
+            <%= render DS::Pill.new(
+              label: t("analyses.show.current_period"),
+              tone: :neutral,
+              marker: false
+            ) %>
+          <% end %>
+        </div>
+        <p class="mt-1 text-xs text-secondary">
+          <%= t(
+            "analyses.show.date_range",
+            start_date: l(@analysis.period.start_date, format: :long),
+            end_date: l(@analysis.period.end_date, format: :long)
+          ) %>
+        </p>
+      </div>
+
+      <% if @analysis.latest_period? %>
+        <%= render DS::Button.new(
+          variant: "icon",
+          icon: "chevron-right",
+          disabled: true,
+          aria: { label: t("analyses.show.next_period") }
+        ) %>
+      <% else %>
+        <%= render DS::Link.new(
+          variant: "icon",
+          icon: "chevron-right",
+          href: analysis_path(
+            period_type: @analysis.period_type,
+            anchor_date: @analysis.next_anchor_date.iso8601,
+            cashflow_year: @analysis.cashflow_year
+          ),
+          aria: { label: t("analyses.show.next_period") }
+        ) %>
+      <% end %>
+    </div>
+  </div>
+<% end %>
+
+<div class="@container space-y-6 pb-8">
+  <div class="grid grid-cols-1 @sm:grid-cols-2 @4xl:grid-cols-4 gap-4">
+    <%= render "analyses/summary_card",
+      label: t("analyses.show.summary.income"),
+      value: @analysis.summary[:income].format,
+      icon_name: "trending-up",
+      change: @analysis.summary[:income_change],
+      positive_is_good: true,
+      value_class: "text-success" %>
+
+    <%= render "analyses/summary_card",
+      label: t("analyses.show.summary.expense"),
+      value: @analysis.summary[:expense].format,
+      icon_name: "trending-down",
+      change: @analysis.summary[:expense_change],
+      positive_is_good: false %>
+
+    <%= render "analyses/summary_card",
+      label: t("analyses.show.summary.net"),
+      value: @analysis.summary[:net].format,
+      icon_name: "scale",
+      change: @analysis.summary[:net_change],
+      positive_is_good: true,
+      value_class: @analysis.summary[:net].negative? ? "text-destructive" : "text-success" %>
+
+    <%= render "analyses/summary_card",
+      label: t("analyses.show.summary.savings_rate"),
+      value: @analysis.summary[:savings_rate] ? number_to_percentage(@analysis.summary[:savings_rate], precision: 1, strip_insignificant_zeros: true) : "—",
+      icon_name: "piggy-bank",
+      change: @analysis.summary[:savings_rate_change],
+      positive_is_good: true,
+      change_suffix: t("analyses.show.summary.points_short") %>
+  </div>
+
+  <%= render "analyses/annual_cashflow", analysis: @analysis %>
+
+  <div class="grid grid-cols-1 @4xl:grid-cols-5 gap-6 items-stretch">
+    <div class="@4xl:col-span-3">
+      <%= render "analyses/cumulative_net", analysis: @analysis %>
+    </div>
+    <div class="@4xl:col-span-2">
+      <%= render "analyses/annual_highlights", analysis: @analysis %>
+    </div>
+  </div>
+
+  <%= turbo_frame_tag "annual-account-breakdown", class: "block" do %>
+    <%= render "analyses/account_breakdown", analysis: @analysis, flow: @account_flow %>
+  <% end %>
+  <%= render "analyses/expense_breakdown", analysis: @analysis %>
+</div>

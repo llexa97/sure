@@ -48,6 +48,30 @@ class BalanceSheetTest < ActiveSupport::TestCase
     assert_equal 1000, BalanceSheet.new(@family).liabilities.total
   end
 
+  test "excluded accounts do not affect totals" do
+    create_account(balance: 1000, accountable: CreditCard.new)
+    create_account(balance: 10000, accountable: Depository.new)
+
+    excluded_asset = create_account(balance: 5000, accountable: Depository.new)
+    excluded_asset.update!(exclude_from_reports: true)
+
+    assert_equal 10000 - 1000, BalanceSheet.new(@family).net_worth
+    assert_equal 10000, BalanceSheet.new(@family).assets.total
+    assert_equal 1000, BalanceSheet.new(@family).liabilities.total
+  end
+
+  test "excluded accounts still have their own balance in account groups" do
+    create_account(balance: 1000, accountable: Depository.new)
+    excluded_asset = create_account(balance: 5000, accountable: Depository.new)
+    excluded_asset.update!(exclude_from_reports: true)
+
+    asset_groups = BalanceSheet.new(@family).assets.account_groups
+    depository_group = asset_groups.find { |ag| ag.name == Depository.display_name }
+
+    assert_equal 1000, depository_group.total
+    assert depository_group.accounts.any?(&:exclude_from_reports?)
+  end
+
   test "net worth series preserves disabled history without carrying it into current totals" do
     period = Period.custom(start_date: Date.current - 1.day, end_date: Date.current)
     active_account = create_account(balance: 20_000, accountable: Depository.new)
@@ -102,6 +126,19 @@ class BalanceSheetTest < ActiveSupport::TestCase
     assert_equal 1000 + 2000, asset_groups.find { |ag| ag.name == Depository.display_name }.total
     assert_equal 3000, asset_groups.find { |ag| ag.name == Investment.display_name }.total
     assert_equal 5000, asset_groups.find { |ag| ag.name == OtherAsset.display_name }.total
+  end
+
+  test "groups cash accounts by their account subtype" do
+    checking = create_account(name: "Checking", balance: 1000, accountable: Depository.new(subtype: "checking"))
+    savings = create_account(name: "Savings", balance: 2000, accountable: Depository.new(subtype: "savings"))
+    create_account(name: "Brokerage", balance: 3000, accountable: Investment.new(subtype: "brokerage"))
+
+    cash_group = BalanceSheet.new(@family).assets.account_groups.find { |ag| ag.key == "depository" }
+
+    assert cash_group.grouped_by_subtype?
+    assert_equal [ "Checking", "Savings" ], cash_group.subtype_groups.map(&:name)
+    assert_equal [ [ checking ], [ savings ] ], cash_group.subtype_groups.map { |group| group.accounts.map(&:account) }
+    assert_equal [ 1000, 2000 ], cash_group.subtype_groups.map(&:total)
   end
 
   test "calculates liability group totals" do

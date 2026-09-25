@@ -1,0 +1,65 @@
+<%# locals: (analysis:) %>
+
+<%= render DS::Card.new(class: "gap-4 h-full", aria: { labelledby: "annual-highlights-title" }) do %>
+  <div>
+    <h2 id="annual-highlights-title" class="text-lg font-medium text-primary"><%= t("analyses.show.highlights.title") %></h2>
+    <p class="mt-1 text-sm text-secondary"><%= t("analyses.show.highlights.description", year: analysis.cashflow_year) %></p>
+  </div>
+
+  <dl class="divide-y divide-divider">
+    <div class="flex items-center justify-between gap-4 py-3 first:pt-0">
+      <dt class="flex items-center gap-2 text-sm text-secondary">
+        <%= icon("calendar-range", size: "sm") %>
+        <%= t("analyses.show.highlights.monthly_average") %>
+      </dt>
+      <dd class="text-sm font-medium text-primary privacy-sensitive"><%= analysis.annual_highlights[:average_monthly_expense].format %></dd>
+    </div>
+
+    <div class="flex items-center justify-between gap-4 py-3">
+      <dt class="flex items-center gap-2 text-sm text-secondary">
+        <%= icon("trending-up", size: "sm") %>
+        <%= t("analyses.show.highlights.highest_month") %>
+      </dt>
+      <dd class="text-right">
+        <% if analysis.annual_highlights[:highest_expense_month] %>
+          <span class="block text-sm font-medium text-primary"><%= analysis.annual_highlights[:highest_expense_month][:label] %></span>
+          <span class="block text-xs text-secondary privacy-sensitive"><%= format_money Money.new(analysis.annual_highlights[:highest_expense_month][:expense], Current.family.currency) %></span>
+        <% else %>
+          <span class="text-sm text-secondary">—</span>
+        <% end %>
+      </dd>
+    </div>
+
+    <div class="flex items-center justify-between gap-4 py-3">
+      <dt class="flex items-center gap-2 text-sm text-secondary">
+        <%= icon("landmark", size: "sm") %>
+        <%= t("analyses.show.highlights.highest_account") %>
+      </dt>
+      <dd class="text-right">
+        <% if analysis.annual_highlights[:highest_expense_account] %>
+          <span class="block max-w-40 truncate text-sm font-medium text-primary"><%= analysis.annual_highlights[:highest_expense_account][:name] %></span>
+          <span class="block text-xs text-secondary privacy-sensitive"><%= analysis.annual_highlights[:highest_expense_account][:expense].format %></span>
+        <% else %>
+          <span class="text-sm text-secondary">—</span>
+        <% end %>
+      </dd>
+    </div>
+
+    <div class="flex items-center justify-between gap-4 py-3 last:pb-0">
+      <dt class="flex items-center gap-2 text-sm text-secondary">
+        <%= icon("scale", size: "sm") %>
+        <%= t("analyses.show.highlights.year_over_year", year: analysis.cashflow_year - 1) %>
+      </dt>
+      <dd class="text-sm font-medium privacy-sensitive">
+        <% if analysis.annual_highlights[:expense_change].nil? %>
+          <span class="text-secondary">—</span>
+        <% else %>
+          <% change = analysis.annual_highlights[:expense_change] %>
+          <span class="<%= change.positive? ? "text-destructive" : (change.negative? ? "text-success" : "text-secondary") %>">
+            <%= "+" if change.positive? %><%= number_to_percentage(change, precision: 1, strip_insignificant_zeros: true) %>
+          </span>
+        <% end %>
+      </dd>
+    </div>
+  </dl>
+<% end %>

@@ -33,9 +33,14 @@ class UpEntry::Processor
   end
 
   # Build a processor for a single raw Up transaction tied to +up_account+.
-  def initialize(up_transaction, up_account:)
+  #
+  # category_matcher (optional) maps Up's category slug onto one of the family's
+  # existing Sure categories. It is injected by UpAccount::Transactions::Processor so a
+  # single matcher (built once per account) is reused across the account's transactions.
+  def initialize(up_transaction, up_account:, category_matcher: nil)
     @up_transaction = up_transaction
     @up_account = up_account
+    @category_matcher = category_matcher
   end
 
   # Import the transaction into the linked Sure account via the import adapter.
@@ -53,6 +58,8 @@ class UpEntry::Processor
       date: date,
       name: name,
       source: "up",
+      category_id: matched_category_id,
+      kind: kind,
       merchant: merchant,
       notes: notes,
       extra: extra_metadata
@@ -96,6 +103,34 @@ class UpEntry::Processor
     # Display name: the Up description, or a generic fallback.
     def name
       data[:description].presence || I18n.t("transactions.unknown_name")
+    end
+
+    # The id of the Sure category that Up's category slug maps to, or nil when no
+    # matcher was injected, the account has category matching switched off, the
+    # transaction has no Up category (transfers/income), or the slug has no confident
+    # equivalent among the family's categories. The import adapter applies this via
+    # enrich_attribute, so it never overwrites a category the user has set or locked.
+    def matched_category_id
+      return nil unless @category_matcher
+      return nil unless account&.enable_category_matcher?
+
+      @category_matcher.match(data[:category_id])&.id
+    end
+
+    # The id of the other account in an internal money movement, if any (see
+    # Provider::Up#flatten_transaction). Present for transfers between the user's own
+    # accounts and for round-ups swept into a Saver; nil for ordinary income/expense.
+    def transfer_account_id
+      data[:transfer_account_id].presence
+    end
+
+    # Mark internal movements as funds_movement so they are excluded from income,
+    # expense, and budget analytics. Two-sided transfers between two linked accounts are
+    # additionally paired into a Transfer by Family#auto_match_transfers!; one-sided moves
+    # (counterpart not linked in Sure) and round-ups rely on this flag, since the matcher
+    # has no opposing entry to pair them with.
+    def kind
+      transfer_account_id ? "funds_movement" : nil
     end
 
     # Optional user-entered message attached to the transaction.
@@ -149,9 +184,15 @@ class UpEntry::Processor
       value = data[:settledAt].presence || data[:createdAt].presence
       case value
       when String
-        Time.parse(value).to_date
+        if value.include?("T") || value.include?(":")
+          Time.parse(value).in_time_zone(account&.family&.timezone).to_date
+        else
+          Date.parse(value)
+        end
+      when Integer, Float
+        Time.at(value).in_time_zone(account&.family&.timezone).to_date
       when Time, DateTime
-        value.to_date
+        value.in_time_zone(account&.family&.timezone).to_date
       when Date
         value
       else
@@ -170,6 +211,7 @@ class UpEntry::Processor
           "pending" => pending?,
           "status" => data[:status],
           "category_id" => data[:category_id],
+          "transfer_account_id" => transfer_account_id,
           "raw_text" => data[:rawText],
           "fx_from" => foreign_amount_data[:currencyCode],
           "fx_amount" => foreign_amount_data[:value]

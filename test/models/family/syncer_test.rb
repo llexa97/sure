@@ -12,6 +12,16 @@ class Family::SyncerTest < ActiveSupport::TestCase
       app_token: "app_token",
       user_token: "user_token"
     )
+    @family.gocardless_items.create!(
+      name: "GoCardless Bank",
+      institution_id: "REVOLUT_REVOGB21",
+      requisition_id: SecureRandom.uuid
+    )
+    @family.powens_items.create!(
+      name: "Powens Bank",
+      access_token: "powens-token",
+      reference: SecureRandom.uuid
+    )
 
     manual_accounts_count = @family.accounts.manual.count
     syncer = Family::Syncer.new(@family)
@@ -33,11 +43,17 @@ class Family::SyncerTest < ActiveSupport::TestCase
     assert_equal "completed", family_sync.reload.status
   end
 
+  test "discovers syncable provider items through reflection" do
+    association_names = syncable_item_associations.map(&:name)
+
+    assert_includes association_names, :ibkr_items
+    assert_includes association_names, :gocardless_items
+    assert_includes association_names, :powens_items
+  end
+
   test "syncs ibkr items through reflective provider discovery" do
     family_sync = syncs(:family)
     syncer = Family::Syncer.new(@family)
-
-    assert_includes syncable_item_associations.map(&:name), :ibkr_items
 
     Account.any_instance.stubs(:sync_later)
     syncable_item_associations.reject { |association| association.name == :ibkr_items }.each do |association|
@@ -55,14 +71,12 @@ class Family::SyncerTest < ActiveSupport::TestCase
   test "only applies active rules during sync" do
     family_sync = syncs(:family)
 
-    # Create an active rule
     active_rule = @family.rules.create!(
       resource_type: "transaction",
       active: true,
       actions: [ Rule::Action.new(action_type: "exclude_transaction") ]
     )
 
-    # Create a disabled rule
     disabled_rule = @family.rules.create!(
       resource_type: "transaction",
       active: false,
@@ -71,14 +85,11 @@ class Family::SyncerTest < ActiveSupport::TestCase
 
     syncer = Family::Syncer.new(@family)
 
-    # Stub the relation to return our specific instances so expectations work
     @family.rules.stubs(:where).with(active: true).returns([ active_rule ])
 
-    # Expect apply_later to be called only for the active rule
     active_rule.expects(:apply_later).once
     disabled_rule.expects(:apply_later).never
 
-    # Mock the account and plaid item syncs to avoid side effects
     Account.any_instance.stubs(:sync_later)
     syncable_item_associations.each do |association|
       association.klass.any_instance.stubs(:sync_later)

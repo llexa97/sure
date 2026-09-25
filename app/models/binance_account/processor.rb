@@ -8,6 +8,18 @@ class BinanceAccount::Processor
   # the most common pairs are tried first and rate-limit weight is front-loaded.
   TRADE_QUOTE_CURRENCIES = %w[USDT BUSD FDUSD BTC ETH BNB].freeze
 
+  # Binance caps the startTime/endTime span per trade-history endpoint: 24h for
+  # spot myTrades, 7 days for futures userTrades. Because fromId cannot be
+  # combined with startTime/endTime, the initial history sync walks forward one
+  # window at a time from the configured start date.
+  TRADE_WINDOW_MS = { spot: 24 * 60 * 60 * 1000, futures: 7 * 24 * 60 * 60 * 1000 }.freeze
+
+  # Futures userTrades only serves the past 6 months, so the initial window walk
+  # is clamped to that lookback regardless of the configured start date.
+  FUTURES_MAX_LOOKBACK_MS = 6 * 30 * 24 * 60 * 60 * 1000
+
+  TRADE_PAGE_LIMIT = 1000
+
   attr_reader :binance_account
 
   def initialize(binance_account)
@@ -34,6 +46,12 @@ class BinanceAccount::Processor
     end
 
     fetch_and_process_trades
+
+    begin
+      fetch_and_process_auto_invest
+    rescue StandardError => e
+      Rails.logger.error "BinanceAccount::Processor - auto-invest failed for #{binance_account.id}: #{e.message}"
+    end
   end
 
   private
@@ -55,6 +73,122 @@ class BinanceAccount::Processor
       )
 
       binance_account.update!(extra: binance_account.extra.to_h.deep_merge(stale_extra))
+    end
+
+    def fetch_and_process_auto_invest
+      provider = binance_account.binance_item&.binance_provider
+      return unless provider
+
+      plans = fetch_all_auto_invest_plans(provider)
+      return if plans.empty?
+
+      existing_payload = binance_account.raw_transactions_payload || {}
+      existing_executions = Array(existing_payload.dig("auto_invest", "executions"))
+      existing_ids = existing_executions.map { |e| e["id"].to_s }.to_set
+
+      new_executions = []
+
+      plans.each do |plan|
+        page = 1
+        loop do
+          response = provider.get_auto_invest_history(plan_id: plan["planId"], current: page, size: 100)
+          break unless response.is_a?(Hash)
+
+          rows = Array(response["list"])
+          break if rows.empty?
+
+          fresh = rows.reject { |row| existing_ids.include?(row["id"].to_s) }
+          new_executions.concat(fresh)
+          existing_ids.merge(fresh.map { |row| row["id"].to_s })
+
+          break if rows.size < 100
+          page += 1
+          break if page > 50
+        end
+      end
+
+      merged_executions = (existing_executions + new_executions).uniq { |e| e["id"].to_s }
+      binance_account.update!(raw_transactions_payload: existing_payload.deep_merge(
+        "auto_invest" => {
+          "plans" => plans,
+          "executions" => merged_executions,
+          "fetched_at" => Time.current.iso8601
+        }
+      ))
+
+      process_auto_invest_executions(new_executions)
+    end
+
+    def fetch_all_auto_invest_plans(provider)
+      %w[PORTFOLIO SINGLE].flat_map do |plan_type|
+        response = provider.get_auto_invest_plans(plan_type: plan_type)
+        Array(response.is_a?(Hash) ? response["plans"] : nil)
+      rescue Provider::Binance::ApiError => e
+        Rails.logger.warn "BinanceAccount::Processor - auto-invest plans (#{plan_type}) failed: #{e.message}"
+        []
+      end
+    end
+
+    def process_auto_invest_executions(executions)
+      executions.each { |execution| process_auto_invest_execution(execution) }
+    rescue StandardError => e
+      Rails.logger.error "BinanceAccount::Processor - auto-invest execution processing failed: #{e.message}"
+    end
+
+    def process_auto_invest_execution(execution)
+      return unless execution.is_a?(Hash)
+      return unless execution["transactionStatus"].to_s.upcase == "SUCCESS"
+
+      account = binance_account.current_account
+      return unless account
+
+      base_symbol = execution["targetAsset"].to_s.upcase
+      quote_symbol = execution["sourceAsset"].to_s.upcase
+      return if base_symbol.blank? || quote_symbol.blank?
+
+      external_id = "binance_ai_#{execution['id']}"
+      return if account.entries.exists?(external_id: external_id)
+
+      ticker = "CRYPTO:#{base_symbol}"
+      security = BinanceAccount::SecurityResolver.resolve(ticker, base_symbol)
+      return unless security
+
+      qty = execution["targetAssetAmount"].to_d
+      return if qty.zero?
+
+      gross_quote_amount = execution["sourceAssetAmount"].to_d
+      execution_price = execution["executionPrice"].to_d
+      date = Time.zone.at(execution["transactionDateTime"].to_i / 1000).to_date
+
+      amount_usd_raw = quote_to_usd(gross_quote_amount, quote_symbol, date: date)
+      price_usd = quote_to_usd(execution_price, quote_symbol, date: date)
+      if amount_usd_raw.nil? || price_usd.nil?
+        Rails.logger.warn "BinanceAccount::Processor - skipping auto-invest #{execution['id']}: could not convert #{quote_symbol} to USD"
+        return
+      end
+
+      fee_quote = execution["transactionFee"].to_d
+      fee_currency = execution["transactionFeeUnit"].to_s.upcase.presence || quote_symbol
+      fee_usd = fee_quote.zero? ? 0 : (quote_to_usd(fee_quote, fee_currency, date: date) || 0)
+
+      account.entries.create!(
+        date: date,
+        name: "Auto-Invest #{qty.round(8)} #{base_symbol}",
+        amount: -amount_usd_raw.round(2),
+        currency: "USD",
+        external_id: external_id,
+        source: "binance",
+        entryable: Trade.new(
+          security: security,
+          qty: qty,
+          price: price_usd,
+          currency: "USD",
+          fee: fee_usd,
+          investment_activity_label: "Buy"
+        )
+      )
+    rescue StandardError => e
+      Rails.logger.error "BinanceAccount::Processor - failed to process auto-invest #{execution['id']}: #{e.message}"
     end
 
     def fetch_and_process_trades
@@ -119,34 +253,81 @@ class BinanceAccount::Processor
     end
 
     # Fetches only trades newer than what is already cached for the given pair.
-    # On the first sync (no cached trades) fetches the most recent page.
-    # On subsequent syncs starts from max_cached_id + 1 and paginates forward.
+    # On subsequent syncs (trades already cached) it paginates forward by trade id
+    # from max_cached_id + 1. On the first sync it walks forward through Binance's
+    # per-endpoint time windows from the configured start date, because fromId
+    # cannot be combined with startTime/endTime.
     def fetch_new_trades(provider, pair, cached_trades, market_type)
-      limit = 1000
       max_cached_id = cached_trades&.map { |t| t["id"].to_i }&.max
 
-      from_id = max_cached_id ? max_cached_id + 1 : nil
-      start_time = nil
-      unless max_cached_id
-        start_time = binance_account.binance_item&.sync_start_date&.to_time&.to_i&.*(1000)
+      if max_cached_id
+        fetch_trades_from_id(provider, pair, market_type, max_cached_id + 1)
+      else
+        fetch_trades_in_windows(provider, pair, market_type)
       end
+    end
+
+    # Incremental sync: fromId alone is a supported Binance combination, so we
+    # paginate forward by id until a partial page signals the end.
+    def fetch_trades_from_id(provider, pair, market_type, from_id)
       all_new = []
 
       loop do
-        page = if market_type == :spot
-          provider.get_spot_trades(pair, limit: limit, from_id: from_id, startTime: start_time)
-        else
-          provider.get_futures_trades(pair, limit: limit, from_id: from_id, startTime: start_time)
-        end
+        page = request_trades(provider, pair, market_type, from_id: from_id)
         break if page.blank?
 
         all_new.concat(page)
-        break if page.size < limit
+        break if page.size < TRADE_PAGE_LIMIT
 
         from_id = page.map { |t| t["id"].to_i }.max + 1
       end
 
       all_new
+    end
+
+    # Initial sync: walk forward from the configured start date in fixed windows
+    # (24h spot / 7d futures). If a window yields a full page there may be more
+    # trades inside it, so we advance the cursor past the last trade and re-scan
+    # the same window before moving on.
+    def fetch_trades_in_windows(provider, pair, market_type)
+      window = TRADE_WINDOW_MS[market_type]
+      now_ms = Time.current.to_i * 1000
+
+      configured_start = binance_account.binance_item&.sync_start_date&.to_time&.to_i
+      cursor = configured_start ? configured_start * 1000 : now_ms - window
+
+      # Futures history is only available for the last 6 months.
+      if market_type == :futures
+        cursor = [ cursor, now_ms - FUTURES_MAX_LOOKBACK_MS ].max
+      end
+
+      all_new = []
+
+      while cursor <= now_ms
+        window_end = [ cursor + window - 1, now_ms ].min
+        page = request_trades(provider, pair, market_type, start_time: cursor, end_time: window_end)
+
+        if page.present?
+          all_new.concat(page)
+
+          if page.size >= TRADE_PAGE_LIMIT
+            cursor = page.map { |t| t["time"].to_i }.max + 1
+            next
+          end
+        end
+
+        cursor = window_end + 1
+      end
+
+      all_new
+    end
+
+    def request_trades(provider, pair, market_type, from_id: nil, start_time: nil, end_time: nil)
+      if market_type == :spot
+        provider.get_spot_trades(pair, limit: TRADE_PAGE_LIMIT, from_id: from_id, start_time: start_time, end_time: end_time)
+      else
+        provider.get_futures_trades(pair, limit: TRADE_PAGE_LIMIT, from_id: from_id, start_time: start_time, end_time: end_time)
+      end
     end
 
     def fetch_new_p2p_trades(provider, cached_p2p)

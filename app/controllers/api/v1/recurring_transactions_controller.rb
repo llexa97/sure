@@ -3,6 +3,11 @@
 class Api::V1::RecurringTransactionsController < Api::V1::BaseController
   include Pagy::Backend
 
+  # The model knows more statuses (suggested, paused, ended), but those are
+  # lifecycle states owned by detection and the web UI; the API writes only
+  # the two it documents.
+  WRITABLE_STATUSES = %w[active inactive].freeze
+
   before_action :ensure_read_scope, only: %i[index show]
   before_action :ensure_write_scope, only: %i[create update destroy]
   before_action :set_readable_recurring_transaction, only: :show
@@ -13,13 +18,16 @@ class Api::V1::RecurringTransactionsController < Api::V1::BaseController
 
     @per_page = safe_per_page_param
     recurring_transactions_query = read_recurring_transactions_scope
-      .includes(:account, :merchant)
-      .order(status: :asc, next_expected_date: :asc)
+      .includes(:account, :merchant, :recurrence_rules, :recurring_occurrences)
 
     recurring_transactions_query = apply_filters(recurring_transactions_query)
 
-    @pagy, @recurring_transactions = pagy(
-      recurring_transactions_query,
+    rows = recurring_transactions_query.to_a.sort_by do |recurring|
+      [ recurring.status, recurring.next_due_date, recurring.id ]
+    end
+
+    @pagy, @recurring_transactions = pagy_array(
+      rows,
       page: safe_page_param,
       limit: @per_page
     )
@@ -147,7 +155,7 @@ class Api::V1::RecurringTransactionsController < Api::V1::BaseController
     def find_recurring_transaction(scope)
       raise ActiveRecord::RecordNotFound unless valid_uuid?(params[:id])
 
-      scope.includes(:account, :merchant).find(params[:id])
+      scope.includes(:account, :merchant, :recurrence_rules, :recurring_occurrences).find(params[:id])
     end
 
     def ensure_read_scope
@@ -213,6 +221,7 @@ class Api::V1::RecurringTransactionsController < Api::V1::BaseController
       input = recurring_transaction_input
       recurring_transaction.errors.add(:last_occurrence_date, :blank) if input[:last_occurrence_date].blank?
       recurring_transaction.errors.add(:next_expected_date, :blank) if input[:next_expected_date].blank?
+      validate_status_write_param(recurring_transaction)
     end
 
     def validate_update_write_params(recurring_transaction)
@@ -220,6 +229,15 @@ class Api::V1::RecurringTransactionsController < Api::V1::BaseController
       if input.key?(:next_expected_date) && input[:next_expected_date].blank?
         recurring_transaction.errors.add(:next_expected_date, :blank)
       end
+      validate_status_write_param(recurring_transaction)
+    end
+
+    # A blank status falls through to the model's presence validation.
+    def validate_status_write_param(recurring_transaction)
+      status = recurring_transaction_input[:status]
+      return if status.blank? || status.to_s.in?(WRITABLE_STATUSES)
+
+      recurring_transaction.errors.add(:status, :inclusion)
     end
 
     def recurring_transaction_input
@@ -246,7 +264,10 @@ class Api::V1::RecurringTransactionsController < Api::V1::BaseController
         :manual,
         :expected_amount_min,
         :expected_amount_max,
-        :expected_amount_avg
+        :expected_amount_avg,
+        :payment_url,
+        :autopay,
+        :notes
       )
     end
 
@@ -254,7 +275,10 @@ class Api::V1::RecurringTransactionsController < Api::V1::BaseController
       params.require(:recurring_transaction).permit(
         :status,
         :expected_day_of_month,
-        :next_expected_date
+        :next_expected_date,
+        :payment_url,
+        :autopay,
+        :notes
       )
     end
 

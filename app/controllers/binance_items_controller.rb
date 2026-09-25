@@ -103,7 +103,14 @@ class BinanceItemsController < ApplicationController
   end
 
   def select_accounts
-    redirect_to settings_providers_path
+    binance_item = Current.family.binance_items.active.ordered.find { |bi| bi.unlinked_accounts_count.to_i > 0 }
+    binance_item ||= Current.family.binance_items.active.ordered.first
+
+    if binance_item
+      redirect_to setup_accounts_binance_item_path(binance_item), status: :see_other
+    else
+      redirect_to settings_providers_path, alert: t(".no_item"), status: :see_other
+    end
   end
 
   def link_accounts
@@ -223,7 +230,7 @@ class BinanceItemsController < ApplicationController
       if parsed_date.present? && parsed_date <= Date.current
         @binance_item.update!(sync_start_date: parsed_date)
       else
-        flash.now[:alert] = "Sync start date must be a valid date in the past."
+        flash.now[:alert] = t(".invalid_sync_start_date")
       end
     end
 

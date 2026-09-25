@@ -1,0 +1,91 @@
+---
+fr:
+  analyses:
+    show:
+      categories:
+        amount: Montant
+        category: Catégorie
+        change: Évolution
+        description: Les remboursements sont déduits pour montrer le coût net réel de chaque catégorie.
+        empty_description: Ajoutez ou catégorisez des transactions pour faire apparaître la répartition de vos dépenses.
+        empty_title: Aucune dépense sur cette période
+        new: Nouveau
+        open_transactions: Voir les transactions de la catégorie %{category}
+        previous_amount: "Montant de la période précédente : %{amount}"
+        share: Part
+        title: Dépenses nettes par catégorie
+        total: Total des dépenses nettes
+      chart:
+        account: Compte courant
+        annual_net: "Solde annuel : %{amount}"
+        aria_label: Graphique annuel des revenus et des dépenses en %{year}, chaque barre étant répartie par compte courant
+        day_range: "%{from}–%{to}"
+        description:
+          one: Total mensuel de votre compte courant, hors virements internes et opérations en attente.
+          other: Total mensuel agrégé de vos %{count} comptes courants, hors virements internes et opérations en attente.
+        empty_description: Aucun flux confirmé n’est disponible sur les comptes courants pour cette année.
+        empty_title: Aucun flux à afficher
+        expense: Dépenses
+        expense_position: Dépenses · barre droite
+        expense_share: Part des dépenses
+        included_accounts: Comptes courants inclus
+        income: Revenus
+        income_position: Revenus · barre gauche
+        income_share: Part des revenus
+        next_year: Année suivante
+        partial_period: Données arrêtées au %{date} pour la période en cours.
+        period: Période
+        previous_year: Année précédente
+        table_caption: Valeurs mensuelles et proportions des revenus et des dépenses par compte courant pour %{year}
+        title: Revenus et dépenses annuels
+      accounts:
+        flow_selector: Afficher les flux
+        flow_options:
+          expense: Dépenses
+          income: Entrées d’argent
+        total_income: Entrées d’argent annuelles
+        account: Compte courant
+        description: Comparez la contribution de chaque compte courant à vos flux de %{year}.
+        empty_description: Ajoutez ou rattachez un compte de type « Compte courant » pour afficher cette analyse.
+        empty_title: Aucun compte courant à analyser
+        expenses: Dépenses
+        income: Revenus
+        net: Solde
+        open_transactions: Voir les opérations du compte %{account}
+        title: Flux annuels par compte courant
+        total_expense: Dépenses annuelles
+      cumulative:
+        aria_label: Évolution du solde cumulé des revenus moins les dépenses en %{year}
+        current: Solde depuis janvier
+        description: Cumul mensuel des revenus moins les dépenses des comptes courants en %{year}.
+        empty_description: Les flux confirmés apparaîtront ici dès qu’ils seront disponibles.
+        empty_title: Aucun solde cumulé à afficher
+        title: Solde cumulé des flux
+      current_period: En cours
+      date_range: Du %{start_date} au %{end_date}
+      highlights:
+        description: Quelques repères calculés sur les comptes courants en %{year}.
+        highest_account: Compte le plus dépensier
+        highest_month: Mois le plus dépensier
+        monthly_average: Dépense moyenne mensuelle
+        title: Repères annuels
+        year_over_year: Évolution par rapport à %{year}
+      next_period: Période suivante
+      period_aria_label: Niveau d'analyse
+      period_labels:
+        quarterly: T%{quarter} %{year}
+      periods:
+        monthly: Mois
+        quarterly: Trimestre
+        yearly: Année
+      previous_period: Période précédente
+      subtitle: Analysez vos flux annuels, vos comptes courants et le détail de vos dépenses.
+      summary:
+        expense: Dépenses
+        income: Revenus
+        net: Solde
+        no_comparison: Pas de comparaison disponible
+        points_short: pts
+        savings_rate: Taux d'épargne
+        vs_previous: vs période précédente
+      title: Analyse

@@ -1,0 +1,5 @@
+fr:
+  powens_items:
+    refresh_pending: "Powens actualise encore vos comptes. Nous vérifierons automatiquement ; aucune reconnexion n’est nécessaire."
+    refreshing: "Actualisation Powens en attente"
+    refresh_failed: "Powens met plus de temps que prévu. Relancez la synchronisation."

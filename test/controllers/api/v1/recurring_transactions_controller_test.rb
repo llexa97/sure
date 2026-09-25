@@ -49,6 +49,35 @@ class Api::V1::RecurringTransactionsControllerTest < ActionDispatch::Integration
     assert_includes response_data["recurring_transactions"].map { |item| item["id"] }, @recurring_transaction.id
   end
 
+  test "list paginates by open due dates and show ignores a settled cached date" do
+    travel_to Date.new(2026, 9, 14) do
+      series = @recurring_transaction
+      series.recurring_occurrences.destroy_all
+      series.update!(next_expected_date: Date.new(2026, 8, 6))
+      series.recurring_occurrences.create!(family: @family, original_due_on: Date.new(2026, 8, 6),
+                                          due_on: Date.new(2026, 8, 6), currency: "USD", status: :paid, closed_at: Time.current)
+      series.recurring_occurrences.create!(family: @family, original_due_on: Date.new(2026, 10, 6),
+                                          due_on: Date.new(2026, 10, 6), currency: "USD",
+                                          snoozed_until: Date.new(2026, 10, 8))
+      other = recurring_transactions(:netflix_subscription)
+      other.update!(next_expected_date: Date.new(2026, 10, 15))
+      other.recurring_occurrences.create!(family: @family, original_due_on: Date.new(2026, 9, 17),
+                                         due_on: Date.new(2026, 9, 17), currency: "USD")
+
+      get api_v1_recurring_transactions_url, params: { status: "active", per_page: 1 },
+          headers: api_headers(@read_only_api_key)
+      assert_response :success
+      row = response.parsed_body["recurring_transactions"].first
+      assert_equal other.id, row["id"]
+      assert_equal "2026-09-17", row["next_expected_date"]
+
+      get api_v1_recurring_transaction_url(series), headers: api_headers(@read_only_api_key)
+      assert_response :success
+      assert_equal "2026-10-08", response.parsed_body["next_expected_date"]
+      assert_equal Date.new(2026, 8, 6), series.reload.next_expected_date
+    end
+  end
+
   test "should require authentication when listing recurring transactions" do
     get api_v1_recurring_transactions_url
 
@@ -330,6 +359,26 @@ class Api::V1::RecurringTransactionsControllerTest < ActionDispatch::Integration
     assert_equal 16, response_data["expected_day_of_month"]
   end
 
+  test "should update payment url and normalize a bare host" do
+    patch api_v1_recurring_transaction_url(@recurring_transaction),
+          params: { recurring_transaction: { payment_url: "pay.example.com/bill" } },
+          headers: api_headers(@api_key)
+
+    assert_response :success
+    assert_equal "https://pay.example.com/bill", JSON.parse(response.body)["payment_url"]
+  end
+
+  # The API is a second door onto the same field, so the scheme allowlist has to hold
+  # here too and not only in the web form.
+  test "should reject a payment url with a non-http scheme" do
+    patch api_v1_recurring_transaction_url(@recurring_transaction),
+          params: { recurring_transaction: { payment_url: "javascript:alert(1)" } },
+          headers: api_headers(@api_key)
+
+    assert_response :unprocessable_entity
+    assert_nil @recurring_transaction.reload.payment_url
+  end
+
   test "should require authentication when updating recurring transaction" do
     patch api_v1_recurring_transaction_url(@recurring_transaction),
           params: { recurring_transaction: { status: "inactive" } }
@@ -357,8 +406,39 @@ class Api::V1::RecurringTransactionsControllerTest < ActionDispatch::Integration
 
   test "should reject update with invalid status" do
     patch api_v1_recurring_transaction_url(@recurring_transaction),
-          params: { recurring_transaction: { status: "paused" } },
+          params: { recurring_transaction: { status: "bogus_status" } },
           headers: api_headers(@api_key)
+
+    assert_response :unprocessable_entity
+    response_data = JSON.parse(response.body)
+    assert_equal "validation_failed", response_data["error"]
+  end
+
+  # suggested, paused and ended are valid model statuses, but they are
+  # lifecycle states the API does not document as writable and must refuse.
+  test "should reject update with an undocumented model status" do
+    %w[suggested paused ended].each do |status|
+      patch api_v1_recurring_transaction_url(@recurring_transaction),
+            params: { recurring_transaction: { status: status } },
+            headers: api_headers(@api_key)
+
+      assert_response :unprocessable_entity
+      response_data = JSON.parse(response.body)
+      assert_equal "validation_failed", response_data["error"]
+      assert_equal "active", @recurring_transaction.reload.status,
+        "#{status} must not be written through the API"
+    end
+  end
+
+  test "should reject create with an undocumented model status" do
+    params = valid_recurring_transaction_params.deep_dup
+    params[:recurring_transaction][:status] = "suggested"
+
+    assert_no_difference("@family.recurring_transactions.count") do
+      post api_v1_recurring_transactions_url,
+           params: params,
+           headers: api_headers(@api_key)
+    end
 
     assert_response :unprocessable_entity
     response_data = JSON.parse(response.body)
