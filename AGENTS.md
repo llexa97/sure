@@ -37,6 +37,10 @@ When touching ERB, view components or CSS, follow the [design system guide](docs
 - Pour mettre à jour l'application, réutiliser explicitement ce projet et ce fichier avec `docker compose -p sure -f /var/lib/docker/volumes/portainer_data/_data/compose/8/docker-compose.yml` ; services applicatifs `web` et `worker`. Vérifier les labels Compose des conteneurs avant tout déploiement afin de ne pas créer une seconde instance.
 - Privilégier les diagnostics en lecture seule et ne jamais exposer les secrets dans les sorties ou les fichiers du dépôt.
 
+## Production Hosts
+- Production application: `ssh docker-app`.
+- Production database: `ssh docker-db`.
+
 ## API Development Guidelines
 
 ## API changes
