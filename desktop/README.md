@@ -23,7 +23,11 @@ running `bin/dev`). The app health-checks `{server}/up`, then loads the real
 cd desktop
 # Single-arch (host only):
 npm run tauri build
-# Universal (Apple Silicon + Intel) — what releases ship:
+# Apple Silicon — what CI and releases ship:
+rustup target add aarch64-apple-darwin
+npm run tauri build -- --target aarch64-apple-darwin
+# Output: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Sure_<ver>_aarch64.dmg
+# Optional local universal build (Apple Silicon + Intel):
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
 npm run tauri build -- --target universal-apple-darwin
 # Output: src-tauri/target/universal-apple-darwin/release/bundle/dmg/Sure_<ver>_universal.dmg
@@ -33,15 +37,15 @@ npm run tauri build -- --target universal-apple-darwin
 The desktop build runs automatically as part of the normal Sure `v*` release.
 The version comes from `.sure-version` and must match the release tag; it is
 stamped into `desktop/package.json` and `desktop/src-tauri/tauri.conf.json`
-only while building. The universal `.dmg` is attached to that same GitHub
+only while building. The Apple Silicon `.dmg` is attached to that same GitHub
 Release.
 
 The **Desktop Build** workflow also runs when desktop code, `.sure-version`, or
 the workflow changes on `main` or in a pull request. It can be started manually
 from GitHub Actions with **Run workflow**. Branch builds use `.sure-version`
 without requiring a release tag. Download the `desktop-release-dmg` artifact
-from the completed run, unzip it, and open the universal `.dmg` (Apple Silicon
-and Intel). Artifacts remain available for 30 days.
+from the completed run, unzip it, and open the Apple Silicon `.dmg` (M-series
+Macs only). Artifacts remain available for 30 days.
 
 ## Installing an unsigned build (end users)
 The published `.dmg` is **not code-signed**, so macOS Gatekeeper blocks the first
@@ -113,9 +117,9 @@ distributable, signed, notarized `.dmg`, add:
 3. Notarization after build:
    ```bash
    VERSION="<release-version>"
-   xcrun notarytool submit "src-tauri/target/universal-apple-darwin/release/bundle/dmg/Sure_${VERSION}_universal.dmg" \
+   xcrun notarytool submit "src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Sure_${VERSION}_aarch64.dmg" \
      --apple-id "<APPLE_ID>" --team-id "<TEAMID>" --password "<APP_SPECIFIC_PW>" --wait
-   xcrun stapler staple "src-tauri/target/universal-apple-darwin/release/bundle/dmg/Sure_${VERSION}_universal.dmg"
+   xcrun stapler staple "src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Sure_${VERSION}_aarch64.dmg"
    ```
 These steps require an Apple Developer account and are intentionally left as a
 documented follow-up.
