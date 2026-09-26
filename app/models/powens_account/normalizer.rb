@@ -10,9 +10,9 @@ class PowensAccount::Normalizer
       [ account[:name].presence || account[:original_name].presence || "Powens Account", masked_identifier(account[:iban] || account[:number]), currency ].compact.join(" ")
     end
 
-    def normalize_transaction(raw_transaction, account_currency:)
+    def normalize_transaction(raw_transaction, account_currency:, include_market_orders: false)
       tx = raw_transaction.with_indifferent_access
-      return nil if market_order?(tx)
+      return nil if market_order?(tx) && !include_market_orders
 
       date = tx[:application_date].presence || tx[:date].presence || tx[:rdate].presence || tx[:vdate].presence
       amount = tx[:value].presence || tx[:gross_value].presence
