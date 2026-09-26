@@ -54,7 +54,7 @@ class PowensAccount::NormalizerTest < ActiveSupport::TestCase
     assert transaction[:pending]
   end
 
-  test "detects and skips market orders in cash transaction normalizer" do
+  test "keeps market orders for investment trades unless explicitly importing cash movements" do
     payload = {
       id: 456,
       date: "2025-10-02",
@@ -65,6 +65,16 @@ class PowensAccount::NormalizerTest < ActiveSupport::TestCase
 
     assert PowensAccount::Normalizer.market_order?(payload)
     assert_nil PowensAccount::Normalizer.normalize_transaction(payload, account_currency: "EUR")
+
+    cash_transaction = PowensAccount::Normalizer.normalize_transaction(
+      payload.merge(value: "-5.52", wording: "S&P 500 Swap Pea Eur (Acc) PEA"),
+      account_currency: "EUR",
+      include_market_orders: true
+    )
+
+    assert_equal "powens_456", cash_transaction[:external_id]
+    assert_equal BigDecimal("5.52"), cash_transaction[:amount]
+    assert_equal "S&P 500 Swap Pea Eur (Acc) PEA", cash_transaction[:name]
   end
 
   test "returns nil when required transaction fields are missing" do

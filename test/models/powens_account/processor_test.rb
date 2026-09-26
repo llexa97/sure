@@ -81,6 +81,32 @@ class PowensAccount::ProcessorTest < ActiveSupport::TestCase
     assert_equal "EUR", current_anchor.entry.currency
   end
 
+  test "imports cash account market orders as outflows without duplicating them on resync" do
+    @powens_account.update!(raw_transactions_payload: [
+      {
+        id: 456,
+        id_account: 11,
+        date: "2026-09-25",
+        value: "-6.61",
+        wording: "S&P 500 Swap Pea Eur (Acc) PEA",
+        type: "market_order"
+      }
+    ])
+
+    assert_difference "@account.entries.count", 1 do
+      PowensAccount::Processor.new(@powens_account).process
+    end
+
+    entry = @account.entries.find_by!(external_id: "powens_456", source: "powens")
+    assert entry.transaction?
+    assert_equal BigDecimal("6.61"), entry.amount
+    assert_equal "market_order", entry.transaction.extra.dig("powens", "type")
+
+    assert_no_difference "@account.entries.count" do
+      PowensAccount::Processor.new(@powens_account).process
+    end
+  end
+
   test "stores loan balances as positive liabilities" do
     loan_account = accounts(:loan)
     powens_loan = PowensAccount.create!(

@@ -51,7 +51,9 @@ class PowensAccount::Processor
       transactions = Array(payload).map do |tx|
         PowensAccount::Normalizer.normalize_transaction(
           tx,
-          account_currency: powens_account.currency || powens_account.current_account.currency
+          account_currency: powens_account.currency || powens_account.current_account.currency,
+          # Investment orders become trades; cash accounts receive the matching debit.
+          include_market_orders: !powens_account.investment?
         )
       end.compact
 
