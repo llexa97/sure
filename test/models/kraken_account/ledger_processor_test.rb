@@ -681,6 +681,131 @@ class KrakenAccount::LedgerProcessorTest < ActiveSupport::TestCase
   end
 
   # ---------------------------------------------------------------------------
+  # fiat/crypto conversions (Buy/Convert, recurring buys, baskets)
+  # ---------------------------------------------------------------------------
+
+  test "a fiat-to-crypto conversion becomes one buy carrying the cash that left" do
+    set_ledgers(
+      "LSPEND" => conversion_leg("CONV1", type: "spend", asset: "ZEUR", amount: "-0.9901", fee: "0.0099"),
+      "LRECV" => conversion_leg("CONV1", type: "receive", asset: "XXBT", amount: "0.00001479", fee: "0")
+    )
+
+    assert_difference "@account.entries.count", 1 do
+      process
+    end
+
+    entry = @account.entries.find_by!(external_id: "kraken_conversion_CONV1")
+    trade = entry.entryable
+    assert_equal "Buy", trade.investment_activity_label
+    assert_equal 1.to_d, entry.amount, "a buy is money out, fee included"
+    assert_equal "EUR", entry.currency
+    assert_equal "0.00001479".to_d, trade.qty
+    assert_equal ("0.9901".to_d / "0.00001479".to_d).round(10), trade.price
+    assert_equal "0.0099".to_d, trade.fee
+    assert_equal "CRYPTO:BTC", trade.security.ticker
+    assert_not @account.entries.exists?(external_id: %w[kraken_ledger_LSPEND kraken_ledger_LRECV])
+
+    assert_no_difference "@account.entries.count" do
+      process
+    end
+  end
+
+  test "a crypto-to-fiat conversion becomes a sell" do
+    set_ledgers(
+      "LSPEND" => conversion_leg("CONV2", type: "spend", asset: "XXBT", amount: "-0.002", fee: "0"),
+      "LRECV" => conversion_leg("CONV2", type: "receive", asset: "ZUSD", amount: "99.00", fee: "1.00")
+    )
+
+    process
+
+    entry = @account.entries.find_by!(external_id: "kraken_conversion_CONV2")
+    assert_equal "Sell", entry.entryable.investment_activity_label
+    assert_equal(-98.to_d, entry.amount, "a sale is money in, net of the fee")
+    assert_equal "USD", entry.currency
+    assert_equal(-0.002.to_d, entry.entryable.qty)
+    assert_equal 49_500.to_d, entry.entryable.price
+  end
+
+  test "a basket becomes one buy per asset sharing the cash it cost" do
+    set_ledgers(
+      "LE1" => conversion_leg("BASKET", type: "spend", asset: "ZEUR", amount: "-0.1969", fee: "0.0030"),
+      "LE2" => conversion_leg("BASKET", type: "spend", asset: "ZEUR", amount: "-0.1974", fee: "0.0029"),
+      "LB1" => conversion_leg("BASKET", type: "receive", asset: "XXBT", amount: "0.0000029", fee: "0"),
+      "LS1" => conversion_leg("BASKET", type: "receive", asset: "SOL", amount: "0.00256781", fee: "0")
+    )
+
+    assert_difference "@account.entries.count", 2 do
+      process
+    end
+
+    btc = @account.entries.find_by!(external_id: "kraken_conversion_BASKET_LB1")
+    sol = @account.entries.find_by!(external_id: "kraken_conversion_BASKET_LS1")
+    assert_equal %w[Buy Buy], [ btc, sol ].map { |entry| entry.entryable.investment_activity_label }
+    assert_equal "0.4002".to_d, btc.amount + sol.amount
+    assert_equal "0.0059".to_d, btc.entryable.fee + sol.entryable.fee
+    assert_equal "CRYPTO:SOL", sol.entryable.security.ticker
+
+    assert_no_difference "@account.entries.count" do
+      process
+    end
+  end
+
+  test "a crypto-for-crypto conversion stays a sweep on both sides" do
+    set_ledgers(
+      "LSPEND" => conversion_leg("DUST", type: "spend", asset: "XXBT", amount: "-0.0001", fee: "0"),
+      "LRECV" => conversion_leg("DUST", type: "receive", asset: "SOL", amount: "0.004", fee: "0")
+    )
+
+    process
+
+    assert_not @account.entries.exists?(external_id: "kraken_conversion_DUST")
+    assert_equal [ "Sweep In", "Sweep Out" ],
+      @account.entries.where(external_id: %w[kraken_ledger_LSPEND kraken_ledger_LRECV])
+        .map { |entry| entry.entryable.investment_activity_label }.sort
+  end
+
+  test "legs imported as sweeps are replaced by the trade, unless edited" do
+    set_ledgers(
+      "LSPEND" => conversion_leg("CONV3", type: "spend", asset: "ZEUR", amount: "-0.9901", fee: "0.0099"),
+      "LRECV" => conversion_leg("CONV3", type: "receive", asset: "XXBT", amount: "0.00001479", fee: "0")
+    )
+    @account.entries.create!(
+      date: Date.current, name: "Converted 1 EUR", amount: 1, currency: "EUR",
+      external_id: "kraken_ledger_LSPEND", source: "kraken",
+      entryable: Transaction.new(investment_activity_label: "Sweep Out")
+    )
+    edited = @account.entries.create!(
+      date: Date.current, name: "Received 0.00001479 BTC", amount: 0, currency: "EUR",
+      external_id: "kraken_ledger_LRECV", source: "kraken", user_modified: true,
+      entryable: Trade.new(security: btc_security, qty: "0.00001479".to_d, price: 0, currency: "EUR", investment_activity_label: "Sweep In")
+    )
+
+    process
+
+    assert @account.entries.exists?(external_id: "kraken_conversion_CONV3")
+    assert_not @account.entries.exists?(external_id: "kraken_ledger_LSPEND")
+    assert edited.reload.persisted?
+  end
+
+  test "a conversion imported with the old sign is corrected, not duplicated" do
+    set_ledgers(
+      "LSPEND" => conversion_leg("CONV4", type: "spend", asset: "ZEUR", amount: "-0.9901", fee: "0.0099"),
+      "LRECV" => conversion_leg("CONV4", type: "receive", asset: "XXBT", amount: "0.00001479", fee: "0")
+    )
+    old = @account.entries.create!(
+      date: Date.current, name: "Buy 0.00001479 BTC", amount: "-0.9901".to_d, currency: "EUR",
+      external_id: "kraken_conversion_CONV4", source: "kraken",
+      entryable: Trade.new(security: btc_security, qty: "0.00001479".to_d, price: 66_943, currency: "EUR", fee: "0.0099".to_d, investment_activity_label: "Buy")
+    )
+
+    assert_no_difference "@account.entries.count" do
+      process
+    end
+
+    assert_equal 1.to_d, old.reload.amount
+  end
+
+  # ---------------------------------------------------------------------------
   # skipped types
   # ---------------------------------------------------------------------------
 
@@ -795,6 +920,14 @@ class KrakenAccount::LedgerProcessorTest < ActiveSupport::TestCase
       @kraken_account.update!(
         raw_transactions_payload: @kraken_account.raw_transactions_payload.merge("ledgers" => ledgers)
       )
+    end
+
+    def conversion_leg(refid, type:, asset:, amount:, fee:)
+      ledger_entry(type: type, asset: asset, amount: amount, fee: fee, time: 1_700_000_000).merge("refid" => refid)
+    end
+
+    def btc_security
+      KrakenAccount::SecurityResolver.resolve("BTC")
     end
 
     def set_raw_payload_assets(assets)

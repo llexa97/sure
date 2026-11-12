@@ -18,11 +18,12 @@
 class KrakenAccount::LedgerProcessor
   include KrakenAccount::UsdConverter
 
-  # Ledger types we import. `spend` and `receive` are the two halves of Kraken's
-  # dust sweep -- "convert small balances" -- and they move units like any other
-  # entry. Left out they were not skipped but dropped, silently, by the guard
-  # below, so a swept position stayed on the books at its pre-sweep quantity
-  # forever.
+  # Ledger types we import. `spend` and `receive` are the halves of Buy/Convert
+  # purchases, recurring buys, baskets and the dust sweep ("convert small
+  # balances"). A fiat/crypto group becomes Buy/Sell trades (see
+  # process_conversions); what remains moves units like any other entry. Left
+  # out they were not skipped but dropped, silently, by the guard below, so a
+  # swept position stayed on the books at its pre-sweep quantity forever.
   SUPPORTED_TYPES = %w[deposit withdrawal staking earn fee spend receive].freeze
 
   # Types whose fee is charged on top of a movement with an external counterparty,
@@ -63,7 +64,14 @@ class KrakenAccount::LedgerProcessor
 
     warm_crypto_prices
 
+    # Ledger ids a conversion trade stands for; they are not imported again
+    # one by one below.
+    @consumed_ledger_ids = Set.new
+    process_conversions
+
     raw_ledgers.each do |ledger_id, ledger|
+      next if @consumed_ledger_ids.include?(ledger_id)
+
       process_ledger_entry(ledger_id, ledger)
     rescue StandardError => e
       DebugLogEntry.capture(
@@ -96,6 +104,193 @@ class KrakenAccount::LedgerProcessor
 
     def raw_ledgers
       kraken_account.raw_transactions_payload&.dig("ledgers") || {}
+    end
+
+    # Buy/Convert, recurring buys and crypto baskets settle as `spend` and
+    # `receive` rows sharing a refid rather than as `trade` rows, so
+    # TradesHistory never sees them. When one side is fiat and the other
+    # crypto, the group is a purchase or a sale and becomes Buy/Sell trades
+    # carrying the cash that moved, exactly as a TradesHistory fill would.
+    # Recorded leg by leg they were internal sweeps instead: the cost basis
+    # vanished and the fiat leg read as a separate cash movement.
+    # Crypto-for-crypto groups (dust conversion) stay as individual rows.
+    def process_conversions
+      groups = conversion_groups
+      return if groups.empty?
+
+      existing = account.entries
+                        .where(source: "kraken", external_id: groups.flat_map { |group| group[:external_ids] })
+                        .includes(:entryable)
+                        .index_by(&:external_id)
+
+      groups.each do |group|
+        process_conversion(group, existing)
+      rescue StandardError => e
+        DebugLogEntry.capture(
+          category: "provider_sync_error",
+          level: "error",
+          message: "Failed to process conversion #{group[:refid]}: #{e.message}",
+          source: self.class.name,
+          provider_key: "kraken",
+          family: kraken_account.kraken_item&.family,
+          metadata: { refid: group[:refid], error_class: e.class.name }
+        )
+      end
+    end
+
+    # One fiat currency on one side, crypto on the other, every fiat row moving
+    # the opposite way to every crypto row. Anything else is left to the
+    # row-by-row import.
+    def conversion_groups
+      raw_ledgers
+        .select { |_id, ledger| %w[spend receive].include?(ledger["type"].to_s.downcase) && ledger["refid"].present? }
+        .group_by { |_id, ledger| ledger["refid"].to_s }
+        .filter_map do |refid, rows|
+          legs = rows.map { |ledger_id, ledger| conversion_leg(ledger_id, ledger) }
+          fiat_legs, crypto_legs = legs.partition { |leg| leg[:fiat] }
+          next if fiat_legs.empty? || crypto_legs.empty?
+          next unless fiat_legs.map { |leg| leg[:symbol] }.uniq.one?
+
+          fiat_types = fiat_legs.map { |leg| leg[:type] }.uniq
+          crypto_types = crypto_legs.map { |leg| leg[:type] }.uniq
+          next unless fiat_types.one? && crypto_types.one? && fiat_types != crypto_types
+
+          crypto_legs.sort_by! { |leg| leg[:ledger_id] }
+          external_ids = crypto_legs.map { |leg| conversion_external_id(refid, leg, crypto_legs.size) }
+          {
+            refid: refid, buy: fiat_types.first == "spend",
+            fiat_legs: fiat_legs, crypto_legs: crypto_legs, external_ids: external_ids
+          }
+        end
+    end
+
+    def conversion_leg(ledger_id, ledger)
+      normalized = normalizer.normalize(ledger["asset"].to_s)
+      {
+        ledger_id: ledger_id, ledger: ledger, type: ledger["type"].to_s.downcase,
+        symbol: normalized[:symbol], price_symbol: normalized[:price_symbol],
+        fiat: fiat?(normalized[:price_symbol]),
+        net: ledger["amount"].to_d - ledger["fee"].to_d
+      }
+    end
+
+    # A single purchase keeps the bare refid, the id conversions were first
+    # imported under; a basket needs one id per asset it bought or sold.
+    def conversion_external_id(refid, crypto_leg, crypto_leg_count)
+      return "kraken_conversion_#{refid}" if crypto_leg_count == 1
+
+      "kraken_conversion_#{refid}_#{crypto_leg[:ledger_id]}"
+    end
+
+    # A basket's fiat legs carry no link to the asset each one paid for, so
+    # the group's cash is shared equally between the assets it moved -- what a
+    # basket of equal slices does, and the total stays exact either way.
+    def process_conversion(group, existing)
+      crypto_legs = group[:crypto_legs].reject { |leg| leg[:net].abs.round(8).zero? }
+      return if crypto_legs.empty?
+
+      securities = crypto_legs.to_h { |leg| [ leg[:ledger_id], resolve_security(leg[:price_symbol]) ] }
+      # Without a security for every asset the group stays row by row, so no
+      # unit goes unrecorded.
+      return if securities.values.any?(&:nil?)
+
+      fiat_legs = group[:fiat_legs]
+      currency = fiat_legs.first[:symbol]
+      cash_total = -fiat_legs.sum { |leg| leg[:net] }
+      gross_total = fiat_legs.sum { |leg| leg[:ledger]["amount"].to_d.abs }
+      fee_total = fiat_legs.sum { |leg| leg[:ledger]["fee"].to_d }
+
+      cash_shares = split_evenly(cash_total, crypto_legs.size, entry_amount_scale)
+      gross_shares = split_evenly(gross_total, crypto_legs.size, 8)
+      fee_shares = split_evenly(fee_total, crypto_legs.size, trade_fee_scale)
+
+      Entry.transaction do
+        crypto_legs.each_with_index do |leg, index|
+          upsert_conversion_trade(
+            external_id: conversion_external_id(group[:refid], leg, group[:crypto_legs].size),
+            existing: existing, group: group, leg: leg, security: securities[leg[:ledger_id]],
+            currency: currency, cash: cash_shares[index], gross: gross_shares[index], fee: fee_shares[index]
+          )
+        end
+
+        (fiat_legs + group[:crypto_legs]).each { |leg| remove_conversion_leg_row(leg[:ledger_id]) }
+      end
+
+      (fiat_legs + group[:crypto_legs]).each { |leg| @consumed_ledger_ids << leg[:ledger_id] }
+    end
+
+    def upsert_conversion_trade(external_id:, existing:, group:, leg:, security:, currency:, cash:, gross:, fee:)
+      qty = leg[:net].abs.round(8)
+      label = group[:buy] ? "Buy" : "Sell"
+      attributes = {
+        name: "#{label} #{qty.to_s('F').sub(/\.?0+\z/, '')} #{leg[:symbol]}",
+        amount: cash,
+        currency: currency,
+        date: Time.zone.at(leg[:ledger]["time"].to_d).to_date
+      }
+      trade_attributes = {
+        security: security,
+        qty: group[:buy] ? qty : -qty,
+        price: (gross / qty).round(trade_price_scale),
+        currency: currency,
+        fee: fee,
+        investment_activity_label: label,
+        extra: {
+          "kraken" => {
+            "refid" => group[:refid],
+            "crypto_ledger_id" => leg[:ledger_id],
+            "fiat_ledger_ids" => group[:fiat_legs].map { |fiat_leg| fiat_leg[:ledger_id] }.sort
+          }
+        }
+      }
+
+      entry = existing[external_id]
+      if entry.nil?
+        account.entries.create!(
+          **attributes, external_id: external_id, source: "kraken",
+          entryable: Trade.new(**trade_attributes)
+        )
+      elsif !entry.protected_from_sync? && entry.entryable.is_a?(Trade)
+        # Conversions imported by an earlier version carry a buy as an inflow
+        # and leave the fee out of the cash; they are rewritten in place.
+        entry.entryable.update!(trade_attributes)
+        entry.update!(attributes)
+      end
+    end
+
+    # The leg was imported on its own before it was recognised as part of a
+    # conversion; the trade now carries it. A row someone edited or matched
+    # into a transfer is theirs and stays.
+    def remove_conversion_leg_row(ledger_id)
+      external_id = "kraken_ledger_#{ledger_id}"
+      return unless @existing_external_ids.include?(external_id)
+
+      entry = find_entry(external_id)
+      return if entry.nil? || entry.protected_from_sync?
+      return if entry.entryable.is_a?(Transaction) && in_transfer?(entry.entryable)
+
+      entry.destroy!
+      @existing_external_ids.delete(external_id)
+      @existing_principals.delete(external_id)
+    end
+
+    # Shares rounded to the column's scale, the remainder on the last one, so
+    # they always add back up to the total.
+    def split_evenly(total, count, scale)
+      share = (total / count).round(scale)
+      Array.new(count - 1, share) + [ total - share * (count - 1) ]
+    end
+
+    def entry_amount_scale
+      Entry.columns_hash["amount"].scale
+    end
+
+    def trade_fee_scale
+      Trade.columns_hash["fee"].scale
+    end
+
+    def trade_price_scale
+      Trade.columns_hash["price"].scale
     end
 
     def process_ledger_entry(ledger_id, ledger)
@@ -342,8 +537,9 @@ class KrakenAccount::LedgerProcessor
       when "staking"               then "Dividend"
       when "earn"                  then "Interest"
       when "fee"                   then "Fee"
-      # A dust sweep exchanges one asset for another inside the exchange. Both
-      # halves are internal movements, so neither invents a cost basis.
+      # What reaches here is a crypto-for-crypto dust sweep, or a half whose
+      # group could not be read as a purchase. Both halves are internal
+      # movements, so neither invents a cost basis.
       when "spend"                 then "Sweep Out"
       when "receive"               then "Sweep In"
       end
