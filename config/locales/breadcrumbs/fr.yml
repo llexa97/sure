@@ -19,6 +19,7 @@ fr:
     categorize: Catégoriser
     changelog: Nouveautés
     chats: Discussions
+    classifier: Classifieur
     coinbase_items: Coinbase
     coinstats_items: CoinStats
     credit_cards: Cartes de crédit
@@ -54,6 +55,7 @@ fr:
     mercury_items: Mercury
     messages: Messages
     mfa: Authentification à deux facteurs
+    monobank_items: Monobank
     oidc_accounts: Comptes SSO
     onboardings: Intégration
     other_assets: Autres actifs
@@ -83,6 +85,7 @@ fr:
     sso_identities: Connexions SSO
     sso_providers: Fournisseurs SSO
     subscriptions: Abonnement
+    system_health: Santé du système
     tags: Balises
     trades: Transactions boursières
     transactions: Transactions

@@ -38,6 +38,11 @@ class Setting < RailsSettings::Base
   # generate would otherwise always trip the watchdog. Read via
   # `Chat.response_timeout`, which applies ENV > Setting > default precedence.
   field :ai_response_timeout, type: :integer, default: ENV["AI_RESPONSE_TIMEOUT"]&.to_i
+  # Per-request bound for the admin "Run checks" AI probes on System Health.
+  # The PDF probes do a full extraction round trip, which cloud models often
+  # can't finish inside the 5s default. Read via `AiHealth::Probe.timeout`,
+  # which applies ENV > Setting > default precedence.
+  field :ai_health_probe_timeout, type: :integer, default: ENV["AI_HEALTH_PROBE_TIMEOUT"]&.to_i
   field :external_assistant_url, type: :string
   field :external_assistant_token, type: :string
   field :external_assistant_model, type: :string
@@ -94,6 +99,7 @@ class Setting < RailsSettings::Base
   # Property valuation (AVM) provider API keys
   field :rentcast_api_key, type: :string, default: ENV["RENTCAST_API_KEY"]
   field :realie_api_key, type: :string, default: ENV["REALIE_API_KEY"]
+  field :chimnie_api_key, type: :string, default: ENV["CHIMNIE_API_KEY"]
 
   # Transparent encryption for API key fields.  The `field` macro defines the
   # raw getter/setter on the class.  By prepending this module we intercept
@@ -112,6 +118,7 @@ class Setting < RailsSettings::Base
       mansa_api_key
       rentcast_api_key
       realie_api_key
+      chimnie_api_key
       openai_access_token
       anthropic_access_token
       jev_api_key
@@ -182,6 +189,14 @@ class Setting < RailsSettings::Base
   field :auto_sync_time, type: :string, default: ENV.fetch("AUTO_SYNC_TIME", "02:22")
   field :auto_sync_timezone, type: :string, default: ENV.fetch("AUTO_SYNC_TIMEZONE", "UTC")
 
+  # Daily market data (security price) import — mirrors auto_sync_* above.
+  # Default time intentionally unchanged from the previous hardcoded
+  # config/schedule.yml entry (22:00 UTC, ~1h after NYSE close) so existing
+  # installations see no behavior change unless they actively reconfigure it.
+  field :market_data_sync_enabled, type: :boolean, default: ENV.fetch("MARKET_DATA_SYNC_ENABLED", "1") == "1"
+  field :market_data_sync_time, type: :string, default: ENV.fetch("MARKET_DATA_SYNC_TIME", "22:00")
+  field :market_data_sync_timezone, type: :string, default: ENV.fetch("MARKET_DATA_SYNC_TIMEZONE", "UTC")
+
   AUTO_SYNC_TIME_FORMAT = /\A([01]?\d|2[0-3]):([0-5]\d)\z/
 
   def self.valid_auto_sync_time?(time_str)
@@ -208,6 +223,9 @@ class Setting < RailsSettings::Base
   field :require_invite_for_signup, type: :boolean, default: false
   field :require_email_confirmation, type: :boolean, default: ENV.fetch("REQUIRE_EMAIL_CONFIRMATION", "true") == "true"
   field :invite_only_default_family_id, type: :string, default: nil
+  # Opt-in for self-hosted demo refresh. Managed hosting retains its scheduled behavior.
+  field :demo_family_refresh_enabled, type: :boolean, default: false
+  field :demo_family_refresh_family_id, type: :string, default: nil
 
   def self.validate_onboarding_state!(state)
     return if ONBOARDING_STATES.include?(state)
@@ -220,6 +238,12 @@ class Setting < RailsSettings::Base
     alias_method :raw_onboarding_state=, :onboarding_state=
     alias_method :raw_openai_model, :openai_model
     alias_method :raw_openai_model=, :openai_model=
+    alias_method :raw_llm_provider, :llm_provider
+
+    # The env var wins over a stored choice, like the other AI settings.
+    def llm_provider
+      ENV["LLM_PROVIDER"].presence || raw_llm_provider
+    end
 
     def onboarding_state
       value = raw_onboarding_state
@@ -319,8 +343,9 @@ class Setting < RailsSettings::Base
     uri_base_value = uri_base.nil? ? openai_uri_base : uri_base
     model_value = model.nil? ? openai_model : model
 
-    # If custom URI base is set, model must also be set
-    if uri_base_value.present? && model_value.blank?
+    # If a custom URI base is set, model must also be set. OpenAI's own
+    # hosts (including regional ones) fall back to the default model.
+    if Provider::Openai.custom_endpoint?(uri_base_value) && model_value.blank?
       raise ValidationError, "OpenAI model is required when custom URI base is configured"
     end
   end

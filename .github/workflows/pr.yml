@@ -1,11 +1,9 @@
 name: Pull Request
 
 on:
+  # Automatic runs are paused on this fork: only the Docker image build
+  # (publish.yml) runs on its own.
   workflow_dispatch:
-  pull_request:
-    types: [opened, synchronize, reopened]
-    paths-ignore:
-      - 'charts/**'
 
 permissions:
   contents: read

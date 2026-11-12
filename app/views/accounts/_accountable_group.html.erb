@@ -1,4 +1,4 @@
-<%# locals: (account_group:, mobile: false, all_tab: false, open: nil, **args) %>
+<%# locals: (account_group:, mobile: false, all_tab: false, open: nil, sortable: false, reconciliation_indicators: {}, **args) %>
 
 <div id="<%= account_group.dom_id(tab: all_tab ? :all : nil, mobile: mobile) %>" data-group-key="<%= account_group.key %>">
   <% is_open = open.nil? ? (account_group.accounts.any? { |account| page_active?(account_path(account)) } || Current.user.always_expanded_account_group?(account_group.key)) : open %>
@@ -13,7 +13,10 @@
 
       <div class="ml-auto text-right grow">
         <%= tag.p format_money(account_group.total_money), class: "text-sm font-medium text-primary privacy-sensitive" %>
-        <%= turbo_frame_tag "#{account_group.key}_sparkline", src: accountable_sparkline_path(account_group.key), loading: "lazy", data: { controller: "turbo-frame-timeout", turbo_frame_timeout_timeout_value: 10000 } do %>
+        <%= turbo_frame_tag "#{account_group.key}_sparkline",
+                            src: accountable_sparkline_path(account_group.key, v: sidebar_sparkline_versions(Current.family)[account_group.accountable_type]),
+                            loading: "lazy",
+                            data: sparkline_frame_data do %>
           <div class="flex items-center w-8 h-4 ml-auto">
             <div class="w-6 h-px bg-loader"></div>
           </div>
@@ -21,8 +24,10 @@
       </div>
     <% end %>
 
-    <div class="space-y-1">
-      <% if account_group.grouped_by_subtype? %>
+    <%# A manual account order is the user's explicit choice, so it shows the
+        flat sortable list; otherwise cash accounts group by subtype. %>
+    <% if account_group.grouped_by_subtype? && !sortable %>
+      <div class="space-y-1">
         <% account_group.subtype_groups.each do |subtype_group| %>
           <%= render DS::Disclosure.new(
             open: true,
@@ -47,16 +52,27 @@
             <% end %>
 
             <% subtype_group.accounts.each do |account| %>
-              <%= render "accounts/accountable_group_account", account: account, account_group: account_group %>
+              <%= render "accounts/accountable_group_account", account: account, account_group: account_group, reconciliation_indicators: reconciliation_indicators %>
             <% end %>
           <% end %>
         <% end %>
-      <% else %>
+      </div>
+    <% else %>
+      <%= tag.div class: "space-y-1",
+            data: sortable ? {
+              controller: "sortable-list",
+              sortable_list_url_value: reorder_accounts_path(group: account_group.key),
+              sortable_list_param_value: "account_ids",
+              sortable_list_hold_delay_value: 400,
+              sortable_list_save_timeout_value: 10_000,
+              sortable_list_mirror_lists_value: true,
+              action: "dragover->sortable-list#dragOver drop->sortable-list#drop account-sort-mode:stop@window->sortable-list#releaseKeyboardGrab turbo:before-visit@window->sortable-list#saveBeforeVisit"
+            } : {} do %>
         <% account_group.accounts.each do |account| %>
-          <%= render "accounts/accountable_group_account", account: account, account_group: account_group %>
+          <%= render "accounts/accountable_group_account", account: account, account_group: account_group, sortable: sortable, reconciliation_indicators: reconciliation_indicators %>
         <% end %>
       <% end %>
-    </div>
+    <% end %>
 
     <div class="my-2">
       <%= render DS::Link.new(

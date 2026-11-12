@@ -1,9 +1,8 @@
 name: Mobile Release
 
 on:
-  push:
-    tags:
-      - 'mobile-v*'
+  # Automatic runs are paused on this fork: only the Docker image build
+  # (publish.yml) runs on its own.
   workflow_dispatch:
 
 permissions:
@@ -68,7 +67,10 @@ jobs:
 
   build:
     name: Build Mobile Apps
+    needs: [prepare_release]
     uses: ./.github/workflows/flutter-build.yml
+    with:
+      app_version: ${{ needs.prepare_release.outputs.release_version }}
     secrets: inherit
 
   play-store:
@@ -86,6 +88,7 @@ jobs:
     needs: [build, prepare_release]
     uses: ./.github/workflows/ios-testflight.yml
     with:
+      app_version: ${{ needs.prepare_release.outputs.release_version }}
       notes: "Mobile release ${{ needs.prepare_release.outputs.tag_name }}"
     secrets: inherit
 

@@ -1,9 +1,9 @@
 name: Update Docs
 
 on:
-  push:
-    branches:
-      - main
+  # Automatic runs are paused on this fork: only the Docker image build
+  # (publish.yml) runs on its own.
+  workflow_dispatch:
 
 jobs:
   update-docs:

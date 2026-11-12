@@ -1,21 +1,15 @@
 name: Publish Docker image (dev)
 
 on:
-  push:
-    branches:
-      - 'feature/**'
-    paths-ignore:
-      - 'charts/**'
-      - 'mobile/**'
-      - 'docs/**'
-      - '**.md'
+  # Automatic runs are paused on this fork: only the Docker image build
+  # (publish.yml) runs on its own.
   workflow_dispatch:
     inputs:
       ref:
         description: 'Git ref (branch, tag, or commit SHA) to build'
         required: true
         type: string
-        default: 'feature/gocardless-bank-sync'
+        default: 'main'
 
 env:
   REGISTRY: ghcr.io

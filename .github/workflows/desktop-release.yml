@@ -1,22 +1,13 @@
 name: Desktop Build
 
 # Build downloadable macOS artifacts from main or manually, and reuse the same
-# build for normal Sure releases. All builds take their version from .sure-version.
+# build for normal Sure releases. Release tags set the version; other builds
+# reuse desktop/package.json.
 on:
+  # Automatic runs are paused on this fork: only the Docker image build
+  # (publish.yml) runs on its own.
   workflow_call:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - 'desktop/**'
-      - '.sure-version'
-      - '.github/workflows/desktop-release.yml'
-  pull_request:
-    paths:
-      - 'desktop/**'
-      - '.sure-version'
-      - '.github/workflows/desktop-release.yml'
 
 permissions:
   contents: read
@@ -36,19 +27,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="$(tr -d '[:space:]' < .sure-version)"
-
-          if [ -z "$VERSION" ]; then
-            echo "::error::.sure-version is empty or unreadable"
-            exit 1
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" == v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            # Standalone builds (main, PRs, manual runs) have no release tag:
+            # reuse the version already declared by the desktop package.
+            VERSION="$(jq -r .version desktop/package.json)"
           fi
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            TAG_VERSION="${GITHUB_REF_NAME#v}"
-            if [ "$VERSION" != "$TAG_VERSION" ]; then
-              echo "::error::.sure-version ($VERSION) does not match release tag (v$TAG_VERSION)"
-              exit 1
-            fi
-          fi
+          printf '%s\n' "$VERSION" > .sure-version
           echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$' \
             || { echo "::error::invalid version '$VERSION'"; exit 1; }
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"

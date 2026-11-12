@@ -134,7 +134,7 @@ class RecurringAllocationsControllerTest < ActionDispatch::IntegrationTest
       end
 
       assert_redirected_to bills_url
-      assert_equal I18n.t("recurring_allocations.fully_allocated"), flash[:alert]
+      assert_equal I18n.t("recurring_allocations.entry_exhausted"), flash[:alert]
       assert_empty requested.reload.allocations
       assert_nil requested.expected_amount
       assert paid.reload.paid?

@@ -1,4 +1,4 @@
-<%# locals: (gocardless_item:) %>
+<%# locals: (gocardless_item:, visible_accounts:) %>
 
 <%= tag.div id: dom_id(gocardless_item) do %>
   <details open class="group bg-container p-4 shadow-border-xs rounded-xl">
@@ -62,8 +62,8 @@
 
     <% unless gocardless_item.scheduled_for_deletion? %>
       <div class="space-y-4 mt-4">
-        <% if gocardless_item.accounts.any? %>
-          <%= render "accounts/index/account_groups", accounts: gocardless_item.accounts %>
+        <% if visible_accounts.any? %>
+          <%= render "accounts/index/account_groups", accounts: visible_accounts %>
         <% else %>
           <div class="p-4 flex flex-col gap-3 items-center justify-center">
             <p class="text-primary font-medium text-sm">Aucun compte lié</p>

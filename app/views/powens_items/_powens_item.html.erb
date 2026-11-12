@@ -1,4 +1,4 @@
-<%# locals: (powens_item:) %>
+<%# locals: (powens_item:, visible_accounts:) %>
 
 <%= tag.div id: dom_id(powens_item) do %>
   <details open class="group bg-container p-4 shadow-border-xs rounded-xl">
@@ -74,8 +74,8 @@
 
     <% unless powens_item.scheduled_for_deletion? %>
       <div class="space-y-4 mt-4">
-        <% if powens_item.accounts.any? %>
-          <%= render "accounts/index/account_groups", accounts: powens_item.accounts %>
+        <% if visible_accounts.any? %>
+          <%= render "accounts/index/account_groups", accounts: visible_accounts %>
         <% else %>
           <div class="p-4 flex flex-col gap-3 items-center justify-center">
             <p class="text-primary font-medium text-sm">No linked accounts</p>
