@@ -78,6 +78,51 @@ class KrakenItem::ImporterTest < ActiveSupport::TestCase
     assert_in_delta 150_050, account.current_balance, 0.01
   end
 
+  test "a complete ledger history fixes holdings Earn double counts or no endpoint reports" do
+    @provider.stubs(:get_asset_info).returns(asset_metadata.merge("ADA" => { "altname" => "ADA" }, "XXRP" => { "altname" => "XRP" }))
+    @provider.stubs(:get_extended_balance).returns(
+      "XXBT" => { "balance" => "0.0078", "hold_trade" => "0" },
+      "ADA" => { "balance" => "0.0135", "hold_trade" => "0" },
+      "XXRP" => { "balance" => "0", "hold_trade" => "0" }
+    )
+    # Earn's total already includes the 0.0135 ADA it paid into the spot wallet.
+    @provider.stubs(:get_earn_allocations).returns(
+      "items" => [ { "native_asset" => "ADA", "amount_allocated" => { "total" => { "native" => "29.3654" } } } ]
+    )
+    # Basket purchases: the XRP and part of the BTC sit in no reported wallet.
+    @provider.stubs(:get_ledgers).returns("count" => 4, "ledger" => {
+      "L1" => { "asset" => "XXBT", "amount" => "0.0078", "fee" => "0", "type" => "receive" },
+      "L2" => { "asset" => "XXBT", "amount" => "0.0001", "fee" => "0", "type" => "receive" },
+      "L3" => { "asset" => "ADA", "amount" => "29.3654", "fee" => "0", "type" => "receive" },
+      "L4" => { "asset" => "XXRP", "amount" => "4.6608", "fee" => "0", "type" => "receive" }
+    })
+    @provider.stubs(:get_ticker).with("XBTUSD").returns("XXBTZUSD" => { "c" => [ "50000.00" ] })
+
+    KrakenItem::Importer.new(@item, kraken_provider: @provider).import
+
+    assets = @item.kraken_accounts.first.raw_payload["assets"]
+    total = ->(symbol) { assets.select { |asset| asset["symbol"] == symbol }.sum { |asset| asset["balance"].to_d } }
+    assert_equal BigDecimal("0.0079"), total.("BTC")
+    assert_equal BigDecimal("29.3654"), total.("ADA")
+    assert_equal BigDecimal("4.6608"), total.("XRP")
+    assert_equal "ledger", assets.find { |asset| asset["symbol"] == "XRP" }["source"]
+  end
+
+  test "an incomplete ledger history leaves reported balances as they are" do
+    @item.update!(sync_start_date: 1.month.ago)
+    @provider.stubs(:get_asset_info).returns(asset_metadata)
+    @provider.stubs(:get_extended_balance).returns("XXBT" => { "balance" => "1.0", "hold_trade" => "0" })
+    @provider.stubs(:get_ledgers).returns("count" => 1, "ledger" => {
+      "L1" => { "asset" => "XXBT", "amount" => "0.4", "fee" => "0", "type" => "receive" }
+    })
+    @provider.stubs(:get_ticker).with("XBTUSD").returns("XXBTZUSD" => { "c" => [ "50000.00" ] })
+
+    KrakenItem::Importer.new(@item, kraken_provider: @provider).import
+
+    btc = @item.kraken_accounts.first.raw_payload["assets"].select { |asset| asset["symbol"] == "BTC" }
+    assert_equal [ "1.0" ], btc.map { |asset| asset["balance"] }
+  end
+
   test "degrades gracefully when Earn Allocations permission is denied" do
     @provider.stubs(:get_asset_info).returns({})
     @provider.stubs(:get_extended_balance).returns({})

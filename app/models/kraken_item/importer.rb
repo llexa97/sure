@@ -24,6 +24,7 @@ class KrakenItem::Importer
     assets += fetch_and_parse_earn_assets(asset_metadata)
     trades = fetch_trades
     ledgers = fetch_ledgers
+    assets = reconcile_with_ledgers(assets, ledgers, asset_metadata) if ledgers_complete?
 
     total_usd = assets.sum { |asset| asset[:amount_usd].to_d }.round(2)
     kraken_account = upsert_kraken_account(
@@ -52,6 +53,86 @@ class KrakenItem::Importer
   end
 
   private
+    # Quantities below this are rounding noise between Kraken's endpoints.
+    LEDGER_RECONCILIATION_TOLERANCE = BigDecimal("0.00000001")
+
+    # BalanceEx and Earn/Allocations do not describe every holding: Earn's
+    # allocated total already includes the rewards it paid into the spot
+    # wallet, and assets held in a Kraken crypto basket appear in neither.
+    # A complete ledger history is the account's own record of every unit
+    # in and out, so when it is available its net per asset is the holding:
+    # Earn is capped to what the spot balance leaves of it, and units no
+    # endpoint reports are added as a "ledger" holding.
+    def reconcile_with_ledgers(assets, ledgers, asset_metadata)
+      ledger_totals = ledger_totals_by_asset(ledgers, asset_metadata)
+      return assets if ledger_totals.empty?
+
+      reconciled = assets.map(&:dup)
+      ledger_totals.each do |canonical, total|
+        held = reconciled.select { |asset| canonical_symbol(asset) == canonical }
+        spot = held.select { |asset| asset[:source] == "spot" }.sum { |asset| asset[:balance].to_d }
+        remaining = total - spot
+        next if remaining < -LEDGER_RECONCILIATION_TOLERANCE
+
+        held.select { |asset| asset[:source] == "earn" }.each do |earn|
+          capped = [ earn[:balance].to_d, [ remaining, 0.to_d ].max ].min
+          reprice_asset!(earn, capped) if capped < earn[:balance].to_d - LEDGER_RECONCILIATION_TOLERANCE
+          remaining -= capped
+        end
+        next if remaining <= LEDGER_RECONCILIATION_TOLERANCE
+
+        reconciled << ledger_only_asset(canonical, remaining, asset_metadata)
+      end
+
+      reconciled.reject { |asset| asset[:balance].to_d.zero? }
+    end
+
+    def ledger_totals_by_asset(ledgers, asset_metadata)
+      normalizer = KrakenAccount::AssetNormalizer.new(asset_metadata)
+
+      ledgers.each_value.with_object(Hash.new(0.to_d)) do |ledger, totals|
+        raw_asset = ledger["asset"].presence
+        next unless raw_asset
+
+        canonical = KrakenAccount::SecurityResolver.canonical_asset(normalizer.normalize(raw_asset)[:symbol])
+        totals[canonical] += ledger["amount"].to_d - ledger["fee"].to_d
+      end
+    end
+
+    def canonical_symbol(asset)
+      KrakenAccount::SecurityResolver.canonical_asset(asset[:symbol])
+    end
+
+    def reprice_asset!(asset, balance)
+      price_usd = asset[:price_usd]&.to_d
+      asset[:balance] = balance.to_s("F")
+      asset[:hold_trade] = balance.to_s("F") if asset[:source] == "earn"
+      asset[:amount_usd] = (price_usd ? (balance * price_usd).round(2) : 0.to_d).to_s("F")
+    end
+
+    def ledger_only_asset(canonical, balance, asset_metadata)
+      parsed = KrakenAccount::AssetNormalizer.new(asset_metadata).normalize(canonical)
+      price_usd, price_status = price_for(canonical)
+
+      parsed.merge(
+        symbol: canonical,
+        price_symbol: canonical,
+        balance: balance.to_s("F"),
+        available: "0", # not in the spot wallet, so not spendable from it
+        hold_trade: balance.to_s("F"),
+        price_usd: price_usd&.to_s("F"),
+        amount_usd: (price_usd ? (balance * price_usd).round(2) : 0.to_d).to_s("F"),
+        price_status: price_status,
+        source: "ledger"
+      )
+    end
+
+    # The ledger net is only the balance when the whole history was read:
+    # from the account's start, and without stopping at the page cap.
+    def ledgers_complete?
+      @ledgers_complete == true
+    end
+
     def parse_assets(balances, asset_metadata)
       normalizer = KrakenAccount::AssetNormalizer.new(asset_metadata)
 
@@ -379,6 +460,7 @@ class KrakenItem::Importer
       offset = 0
       all_ledgers = {}
 
+      @ledgers_complete = false
       MAX_LEDGER_PAGES.times do
         result = kraken_provider.get_ledgers(start: start_time, offset: offset)
         ledgers = result.to_h.fetch("ledger", {})
@@ -397,10 +479,12 @@ class KrakenItem::Importer
         all_ledgers.merge!(ledgers.except(*duplicate_ids))
 
         count = result.to_h["count"].to_i
-        break if ledgers.size < LEDGER_PAGE_SIZE
+        if ledgers.size < LEDGER_PAGE_SIZE || (count.positive? && offset + ledgers.size >= count)
+          @ledgers_complete = start_time.nil?
+          break
+        end
 
         offset += ledgers.size
-        break if count.positive? && offset >= count
       end
 
       all_ledgers
