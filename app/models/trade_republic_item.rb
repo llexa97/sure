@@ -80,7 +80,7 @@ class TradeRepublicItem < ApplicationRecord
   def process_accounts
     return [] if trade_republic_accounts.empty?
 
-    # Portfolio and Crypto before cash so Saveback trades exist before cash
+    # Portfolio, Crypto and PEA before cash so Saveback trades exist before cash
     # reconciliation removes legacy Saveback withdrawals in the same
     # process_accounts pass, and cash settlements find the trade they link to.
     # The accounts are processed without a spanning transaction: each pass
@@ -89,7 +89,7 @@ class TradeRepublicItem < ApplicationRecord
     # settlement counterpart left halfway through a move.
     linked_trade_republic_accounts
       .includes(account_provider: :account)
-      .order(Arel.sql("CASE kind WHEN 'portfolio' THEN 0 WHEN 'crypto' THEN 1 WHEN 'cash' THEN 2 ELSE 3 END"), :id)
+      .order(Arel.sql("CASE kind WHEN 'portfolio' THEN 0 WHEN 'crypto' THEN 1 WHEN 'pea' THEN 2 WHEN 'cash' THEN 3 ELSE 4 END"), :id)
       .each_with_object([]) do |tr_account, results|
       account = tr_account.current_account
       next unless account

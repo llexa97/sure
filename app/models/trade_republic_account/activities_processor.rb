@@ -70,6 +70,7 @@ class TradeRepublicAccount::ActivitiesProcessor
 
     reconcile_split_portfolio_transactions!
     reconcile_moved_crypto_trades!
+    reconcile_moved_pea_trades!
     reconcile_stale_broker_funded_cash_transactions!
     reconcile_non_importable_entries!
     reconcile_settlement_counterparts!
@@ -107,11 +108,14 @@ class TradeRepublicAccount::ActivitiesProcessor
     # a failed timeline update can still hold an order execution whose
     # portfolio copy has since been deleted.
     # The Crypto account stores no timeline of its own: it takes the crypto
-    # events from the portfolio's.
+    # events from the portfolio's. The PEA account likewise takes the PEA
+    # orders.
     def timeline_events
       @timeline_events ||= begin
         events = if @trade_republic_account.crypto?
           portfolio_timeline_events.select { |event| event.is_a?(Hash) && crypto_event?(event.with_indifferent_access) }
+        elsif @trade_republic_account.pea?
+          @trade_republic_account.pea_order_events
         else
           Array(@trade_republic_account.raw_timeline_payload)
         end
@@ -144,6 +148,12 @@ class TradeRepublicAccount::ActivitiesProcessor
         crypto_account_trade_ids.include?("trade_republic_event_#{event[:id]}")
     end
 
+    # An order executed inside the PEA (see TradeRepublicAccount.pea_order?).
+    def pea_event?(event)
+      @pea_instrument_names ||= TradeRepublicAccount.pea_instrument_names(portfolio_timeline_events)
+      TradeRepublicAccount.pea_order?(event, @pea_instrument_names)
+    end
+
     def crypto_account_trade_ids
       @crypto_account_trade_ids ||= begin
         crypto_account = @trade_republic_account.sibling("crypto")&.usable_account
@@ -174,11 +184,16 @@ class TradeRepublicAccount::ActivitiesProcessor
         return false if @trade_republic_account.crypto? && protected_portfolio_trade?(event)
       end
 
+      if pea_event?(event)
+        return false if @trade_republic_account.portfolio? && pea_split?
+        return false if @trade_republic_account.pea? && protected_portfolio_trade?(event)
+      end
+
       return @trade_republic_account.holds_securities? if broker_funded_trade_event?(event)
       return true if round_up_event?(event_type)
 
       category = event[:category].to_s
-      return category == CATEGORY_ORDER_EXECUTION if @trade_republic_account.crypto?
+      return category == CATEGORY_ORDER_EXECUTION if @trade_republic_account.crypto? || @trade_republic_account.pea?
       return category == CATEGORY_ORDER_EXECUTION if linked_cash_account_present? && @trade_republic_account.portfolio?
 
       true
@@ -823,9 +838,10 @@ class TradeRepublicAccount::ActivitiesProcessor
       )
     end
 
-    # The Portfolio and Crypto accounts whose trades the Cash account settles.
+    # The Portfolio, Crypto and PEA accounts whose trades the Cash account
+    # settles.
     def linked_securities_accounts
-      @linked_securities_accounts ||= %w[portfolio crypto].filter_map do |kind|
+      @linked_securities_accounts ||= %w[portfolio crypto pea].filter_map do |kind|
         @trade_republic_account.sibling(kind)&.usable_account
       end
     end
@@ -892,6 +908,18 @@ class TradeRepublicAccount::ActivitiesProcessor
     def reconcile_moved_crypto_trades!
       return unless @trade_republic_account.crypto?
 
+      reconcile_trades_moved_from_portfolio!("crypto")
+    end
+
+    # Once the PEA account is linked, it imports the PEA orders the portfolio
+    # held until then; same rules as reconcile_moved_crypto_trades!.
+    def reconcile_moved_pea_trades!
+      return unless @trade_republic_account.pea?
+
+      reconcile_trades_moved_from_portfolio!("PEA")
+    end
+
+    def reconcile_trades_moved_from_portfolio!(destination)
       portfolio_account = @trade_republic_account.sibling("portfolio")&.usable_account
       return unless portfolio_account
 
@@ -912,7 +940,7 @@ class TradeRepublicAccount::ActivitiesProcessor
       DebugLogEntry.capture(
         category: "sync",
         level: "info",
-        message: "Moved #{removed_count} Trade Republic crypto trade(s) from the portfolio to the Crypto account",
+        message: "Moved #{removed_count} Trade Republic #{destination} trade(s) from the portfolio to the #{destination} account",
         source: "trade_republic",
         family: @trade_republic_account.trade_republic_item.family,
         provider_key: "trade_republic",
@@ -1026,6 +1054,12 @@ class TradeRepublicAccount::ActivitiesProcessor
       return @crypto_split if defined?(@crypto_split)
 
       @crypto_split = @trade_republic_account.crypto_split?
+    end
+
+    def pea_split?
+      return @pea_split if defined?(@pea_split)
+
+      @pea_split = @trade_republic_account.pea_split?
     end
 
     def linked_cash_account_present?

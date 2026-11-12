@@ -76,6 +76,7 @@ nl:
         account_type_investment: "Beleggingsportefeuille"
         account_type_cash: "Geldaccount"
         account_type_crypto: "Crypto-account"
+        account_type_pea: "PEA-rekening"
         account_summary: "%{account_type} • Saldo: %{balance}"
         account_id: "Account-ID: %{account_id}"
       link_existing:

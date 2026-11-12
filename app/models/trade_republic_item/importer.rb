@@ -109,7 +109,28 @@ class TradeRepublicItem::Importer
         domain_statuses: domain_statuses
       )
       upsert_crypto_account(account_id, currency, domain_statuses)
+      upsert_pea_account(account_id, currency)
       portfolio_capped | cash_capped
+    end
+
+    # Trade Republic returns no PEA in the account metadata nor in the
+    # portfolio snapshot; only the timeline shows it. Its account is created
+    # once the timeline holds a PEA cash movement, reads its orders from the
+    # portfolio payloads, and stays unlinked until the user sets it up.
+    def upsert_pea_account(account_id, currency)
+      portfolio = trade_republic_item.trade_republic_accounts.find_by(kind: "portfolio")
+      pea = trade_republic_item.trade_republic_accounts.find_by(kind: "pea")
+      return if pea.nil? && Array(portfolio&.raw_timeline_payload).none? { |event| TradeRepublicAccount.pea_movement?(event) }
+
+      pea ||= trade_republic_item.trade_republic_accounts.build(kind: "pea")
+      pea.assign_attributes(
+        trade_republic_account_id: "pea:#{account_id}",
+        name: build_account_name(account_id, kind: "pea"),
+        currency: currency,
+        cash_balance: 0
+      )
+      pea.current_balance = pea.pea_positions_value
+      pea.save!
     end
 
     # Crypto gets its own account because Sure has a Crypto account type.
@@ -506,7 +527,7 @@ class TradeRepublicItem::Importer
 
     def build_account_name(account_id, kind:)
       base = I18n.t("trade_republic_items.defaults.name")
-      suffix = { "cash" => "Cash", "crypto" => "Crypto" }.fetch(kind, "Portfolio")
+      suffix = { "cash" => "Cash", "crypto" => "Crypto", "pea" => "PEA" }.fetch(kind, "Portfolio")
       account_id.present? ? "#{base} #{suffix} (#{account_id})" : "#{base} #{suffix}"
     end
 

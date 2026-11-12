@@ -76,6 +76,7 @@ zh-CN:
         account_type_investment: "投资组合"
         account_type_cash: "现金账户"
         account_type_crypto: "加密货币账户"
+        account_type_pea: "PEA 账户"
         account_summary: "%{account_type} • 余额：%{balance}"
         account_id: "账户 ID：%{account_id}"
       link_existing:

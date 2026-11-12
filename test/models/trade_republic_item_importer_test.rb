@@ -77,6 +77,49 @@ class TradeRepublicItemImporterTest < ActiveSupport::TestCase
     assert_not @item.trade_republic_accounts.exists?(kind: "crypto")
   end
 
+  test "import creates a PEA account valued at the PEA orders" do
+    provider = mock("trade_republic_provider")
+    provider.expects(:sync).returns(client_result(
+      "status" => "ok",
+      "account" => { "brokerage_account_id" => "DE9995", "currency" => "EUR" },
+      "cash" => { "amount" => "10", "currency" => "EUR" },
+      "positions" => [],
+      "events" => [
+        { "id" => "evt_pea_buy", "timestamp" => "2026-11-10T13:46:41Z", "category" => "orderExecution",
+          "eventType" => "TRADING_TRADE_EXECUTED", "title" => "S&P 500 Swap Pea Eur (Acc)",
+          "detail" => { "isin" => "IE000DQLYVB9", "name" => "S&P 500 Swap Pea Eur (Acc)", "quantity" => "2",
+                        "price" => "6.5", "amount" => "13.0", "signed_amount" => -13.0, "currency" => "EUR" } },
+        { "id" => "evt_pea_in", "timestamp" => "2026-11-10T13:46:43Z", "eventType" => "PEA_DEPOSIT_DEBIT",
+          "title" => "S&P 500 Swap Pea Eur (Acc)", "subtitle" => "PEA",
+          "detail" => { "amount" => -13.0, "signed_amount" => -13.0, "currency" => "EUR" } }
+      ],
+      "warnings" => []
+    ))
+
+    TradeRepublicItem::Importer.new(@item, provider: provider).import
+
+    pea = @item.trade_republic_accounts.find_by!(kind: "pea")
+    assert_equal "pea:DE9995", pea.trade_republic_account_id
+    assert_equal BigDecimal("13"), pea.current_balance
+    assert_equal BigDecimal("0"), pea.cash_balance
+  end
+
+  test "import creates no PEA account without a PEA movement" do
+    provider = mock("trade_republic_provider")
+    provider.expects(:sync).returns(client_result(
+      "status" => "ok",
+      "account" => { "brokerage_account_id" => "DE9994", "currency" => "EUR" },
+      "cash" => { "amount" => "10", "currency" => "EUR" },
+      "positions" => [],
+      "events" => [],
+      "warnings" => []
+    ))
+
+    TradeRepublicItem::Importer.new(@item, provider: provider).import
+
+    assert_not @item.trade_republic_accounts.exists?(kind: "pea")
+  end
+
   test "cash balance keeps funds reserved for open orders" do
     provider = mock("trade_republic_provider")
     provider.expects(:sync).returns(client_result(

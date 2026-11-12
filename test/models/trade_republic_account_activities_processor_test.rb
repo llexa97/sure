@@ -1245,6 +1245,43 @@ class TradeRepublicAccountActivitiesProcessorTest < ActiveSupport::TestCase
     assert_not crypto_sure.entries.exists?
   end
 
+  test "a linked PEA account takes PEA orders and their settlements from the portfolio" do
+    cash_account, cash_sure = create_linked_cash_account!
+    stock = order_execution_detail(event_id: "evt_stock", quantity: "1", isin: "US0378331005", amount: "150.00")
+      .deep_merge(title: "Apple Inc.", detail: { signed_amount: -150.0 })
+    @tr_account.update!(raw_timeline_payload: [ stock, pea_order("evt_pea", amount: "6.72"), pea_movement("evt_pea_in", amount: "6.72") ])
+    process_all(@tr_account, cash_account)
+    assert find_trade("trade_republic_event_evt_pea")
+
+    pea_account, pea_sure = create_linked_pea_account!
+    process_all(@tr_account, pea_account, cash_account)
+
+    assert_equal %w[trade_republic_event_evt_stock trade_republic_settlement_evt_stock],
+      @account.entries.order(:external_id).pluck(:external_id)
+    assert_equal 0, @account.entries.sum(:amount)
+
+    pea_trade = pea_sure.entries.find_by!(external_id: "trade_republic_event_evt_pea")
+    assert_equal BigDecimal("6.72"), pea_trade.amount
+    counterpart = pea_sure.entries.find_by!(external_id: "trade_republic_settlement_evt_pea")
+    settlement = cash_sure.entries.find_by!(external_id: "trade_republic_event_evt_pea")
+    assert_equal counterpart.transaction, settlement.transaction.transfer.inflow_transaction
+    assert_equal 0, pea_sure.entries.sum(:amount)
+    assert_not cash_sure.entries.exists?(external_id: "trade_republic_event_evt_pea_in")
+
+    assert_no_difference [ -> { pea_sure.entries.count }, -> { @account.entries.count }, -> { Transfer.count } ] do
+      process_all(@tr_account, pea_account, cash_account)
+    end
+  end
+
+  test "PEA orders stay on the portfolio until the PEA account is linked" do
+    @tr_account.update!(raw_timeline_payload: [ pea_order("evt_pea", amount: "6.72"), pea_movement("evt_pea_in", amount: "6.72") ])
+    @item.trade_republic_accounts.create!(name: "PEA", kind: "pea", trade_republic_account_id: "pea:DEPROC1", currency: "EUR")
+
+    process_all(@tr_account)
+
+    assert find_trade("trade_republic_event_evt_pea")
+  end
+
   test "trades of a position listed under crypto go to the Crypto account whatever its ISIN" do
     @tr_account.update!(raw_positions_payload: [
       { "isin" => "XS0000000001", "name" => "Some Coin", "category" => "crypto_wallet", "quantity" => "1", "price" => "10" }
@@ -2168,6 +2205,53 @@ class TradeRepublicAccountActivitiesProcessorTest < ActiveSupport::TestCase
       )
       crypto_provider.ensure_account_provider!(crypto_sure)
       [ crypto_provider.reload, crypto_sure ]
+    end
+
+    def create_linked_pea_account!
+      pea_provider = @item.trade_republic_accounts.create!(
+        name: "PEA",
+        kind: "pea",
+        trade_republic_account_id: "pea:DEPROC1",
+        currency: "EUR"
+      )
+      pea_sure = @family.accounts.create!(
+        name: "Trade Republic PEA",
+        balance: 0,
+        cash_balance: 0,
+        currency: "EUR",
+        accountable: Investment.new(subtype: "pea")
+      )
+      pea_provider.ensure_account_provider!(pea_sure)
+      [ pea_provider.reload, pea_sure ]
+    end
+
+    def pea_order(event_id, amount:, quantity: "1", timestamp: "2026-11-10T13:46:41Z")
+      {
+        id: event_id,
+        timestamp: timestamp,
+        category: "orderExecution",
+        eventType: "TRADING_TRADE_EXECUTED",
+        title: "S&P 500 Swap Pea Eur (Acc)",
+        detail: {
+          isin: "IE000DQLYVB9",
+          name: "S&P 500 Swap Pea Eur (Acc)",
+          quantity: quantity,
+          amount: amount,
+          signed_amount: -amount.to_f,
+          currency: "EUR"
+        }
+      }
+    end
+
+    def pea_movement(event_id, amount:, timestamp: "2026-11-10T13:46:43Z")
+      {
+        id: event_id,
+        timestamp: timestamp,
+        eventType: "PEA_DEPOSIT_DEBIT",
+        title: "S&P 500 Swap Pea Eur (Acc)",
+        subtitle: "PEA",
+        detail: { amount: -amount.to_f, signed_amount: -amount.to_f, currency: "EUR" }
+      }
     end
 
     def process_all(*trade_republic_accounts)
