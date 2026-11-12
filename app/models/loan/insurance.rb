@@ -47,7 +47,9 @@ class Loan::Insurance
       new(
         schedule: schedule,
         annual_rate: loan.insurance_rate,
-        rate_type: loan.insurance_rate_type,
+        # A premium bundled into the instalment is charged on the balance:
+        # that is what lets the instalment stay level while it falls.
+        rate_type: loan.insurance_included? ? DECREASING_LIFE : loan.insurance_rate_type,
         principal: loan.original_balance,
         currency: loan.account.currency
       )
@@ -74,7 +76,7 @@ class Loan::Insurance
         Premium.new(
           number: payment.number,
           date: payment.date,
-          amount: money((base * monthly_rate).round(currency_precision))
+          amount: money((base * period_rate(payment)).round(currency_precision))
         )
       end
     end
@@ -98,6 +100,13 @@ class Loan::Insurance
   private
     def monthly_rate
       @monthly_rate ||= annual_rate / (100 * MONTHS_PER_YEAR)
+    end
+
+    # A prorated first period is covered for its actual days, like its
+    # interest; every other period for a twelfth of the year.
+    def period_rate(payment)
+      fraction = schedule.period_fraction_for(payment.number)
+      fraction ? (annual_rate / 100) * fraction : monthly_rate
     end
 
     def currency_precision

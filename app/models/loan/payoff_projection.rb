@@ -259,7 +259,8 @@ class Loan
           # on a flat twelfth beside a schedule that is not, and a borrower
           # exactly on contract would be quoted interest saved or lost that
           # only the difference in basis produced.
-          day_count_convention: loan.day_count_convention
+          day_count_convention: loan.day_count_convention,
+          prorated_first_period: schedule.prorated_first_period? && current_period_start == schedule.start_date
         ).run
       end
 

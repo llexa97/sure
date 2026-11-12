@@ -47,6 +47,12 @@ class Loan < ApplicationRecord
   normalizes :insurance_rate_type, with: ->(value) { value.presence }
   validates :insurance_rate_type, inclusion: { in: Loan::Insurance::RATE_TYPES }, allow_nil: true
 
+  # Opening instalments that repay no principal. Bounded by the term on the
+  # form's side of things only: term_months can be nil.
+  validates :interest_only_months, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validate :interest_only_months_within_term
+  validate :first_payment_follows_drawdown
+
   # How much was borrowed for every unit the borrower put in. Nil without a
   # down payment recorded: a loan with no deposit is not infinitely leveraged,
   # it is a loan whose leverage nobody has told us.
@@ -69,7 +75,8 @@ class Loan < ApplicationRecord
     # slips past here would fall through to a nil schedule instead of a payment.
     return Money.new(0, account.currency) if original_balance.amount <= 0 || term_months <= 0
 
-    amortization_schedule&.periodic_payment
+    schedule = amortization_schedule
+    insurance_included? ? schedule&.level_instalment : schedule&.periodic_payment
   end
 
   # A loan can be amortised once we know what was borrowed, at what rate, and
@@ -92,6 +99,18 @@ class Loan < ApplicationRecord
       term_months.to_i.positive? &&
       term_months.to_i <= Loan::Simulator::MAX_PERIODS &&
       original_balance.amount.positive?
+  end
+
+  private def interest_only_months_within_term
+    return if term_months.to_i <= 0 || interest_only_months.to_i < term_months
+
+    errors.add(:interest_only_months, :less_than, count: term_months)
+  end
+
+  private def first_payment_follows_drawdown
+    return if first_payment_date.nil? || start_date.nil? || first_payment_date > start_date
+
+    errors.add(:first_payment_date, :greater_than, count: I18n.l(start_date))
   end
 
   private def rate_changes_must_be_parseable
@@ -290,7 +309,10 @@ class Loan < ApplicationRecord
   # The columns AmortizationSchedule.for reads from the loan itself. Assigning
   # any of them drops the memoised schedule, as reload does, so a read after the
   # change answers with the new terms rather than the ones it was built from.
-  SCHEDULE_INPUTS = %i[interest_rate term_months rate_type start_date variable_rate_schedule day_count_convention].freeze
+  SCHEDULE_INPUTS = %i[
+    interest_rate term_months rate_type start_date variable_rate_schedule day_count_convention
+    first_payment_date interest_only_months insurance_included
+  ].freeze
 
   validates :day_count_convention, inclusion: { in: DAY_COUNT_CONVENTIONS }
 
@@ -308,6 +330,8 @@ class Loan < ApplicationRecord
 
   INSURANCE_INPUTS.each do |input|
     define_method(:"#{input}=") do |value|
+      # A bundled premium sizes the repayment, so the schedule goes with it.
+      @amortization_schedule = nil
       @insurance = nil
       super(value)
     end
@@ -354,7 +378,10 @@ class Loan < ApplicationRecord
   # to the term: a loan running past its last payment is finished, not further
   # in than it can be.
   def months_elapsed(as_of: Date.current)
-    origin = origination_date
+    # With a first instalment that is not a month after drawdown, the periods
+    # are counted from a month before that instalment, so one has been served
+    # on the day it falls due.
+    origin = first_payment_date ? first_payment_date << 1 : origination_date
     return 0 if origin.nil? || term_months.nil? || as_of < origin
 
     months = (as_of.year * 12 + as_of.month) - (origin.year * 12 + origin.month)

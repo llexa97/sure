@@ -13,6 +13,11 @@ fr:
       rate_type_fixed: Fixe
       rate_type_variable: Variable
       down_payment: Apport personnel
+      first_payment_date: Date de la première échéance
+      first_payment_date_hint: Laissez la date vide si la première échéance tombe un mois après le déblocage. Les mois de franchise ouvrent le prêt par des échéances sans remboursement de capital et comptent dans la durée.
+      interest_only_months: Mois de franchise
+      insurance_included: Assurance comprise dans la mensualité
+      insurance_included_hint: La mensualité du contrat est constante et inclut une assurance dégressive.
       insurance_rate: Taux d'assurance
       insurance_rate_hint: Un taux annuel, prélevé chaque mois en complément de la mensualité. L'assurance constante porte sur le capital initial, l'assurance dégressive sur le capital restant dû.
       insurance_rate_placeholder: '0,36'

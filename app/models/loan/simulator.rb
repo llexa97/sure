@@ -82,7 +82,8 @@ class Loan
       payment_strategy: :reamortize,
       payment_amount: nil,
       settle_at_schedule_end: true,
-      day_count_convention: DEFAULT_DAY_COUNT_CONVENTION
+      day_count_convention: DEFAULT_DAY_COUNT_CONVENTION,
+      prorated_first_period: false
     )
       @starting_balance = BigDecimal(starting_balance.to_s)
       @accrual_start_date = accrual_start_date
@@ -103,6 +104,10 @@ class Loan
         end
       @settle_at_schedule_end = settle_at_schedule_end
       @day_count_convention = (day_count_convention || DEFAULT_DAY_COUNT_CONVENTION).to_sym
+      # The first period is not a whole month (drawdown on the 4th, first
+      # instalment on the 15th), so it accrues on its actual days over a
+      # 365-day year whatever the convention charges a whole month.
+      @prorated_first_period = prorated_first_period
 
       raise ArgumentError, "payment schedule must not be empty" if @payment_schedule.empty?
       if @payment_schedule.length > MAX_PERIODS
@@ -144,7 +149,13 @@ class Loan
         # being level. Sizing therefore stays on the nominal monthly rate, which
         # is also what the borrower's contracted payment is set from.
         accrual_annual = @accrual_rate_for.call(period_start)
-        accrual_rate = accrual_factor(period_start, payment_date, accrual_annual)
+        period_fraction = prorated_year_fraction(period_start, payment_date) if index.zero? && @prorated_first_period
+        accrual_rate =
+          if period_fraction
+            (BigDecimal(accrual_annual.to_s) / PERCENT) * period_fraction
+          else
+            accrual_factor(period_start, payment_date, accrual_annual)
+          end
         sizing_rate = monthly_rate(rate_on(payment_date))
 
         # Interest first, on the balance the period OPENED with: one charge per
@@ -161,7 +172,8 @@ class Loan
             index: index,
             balance: balance,
             sizing_rate: sizing_rate,
-            remaining_payments: @payment_schedule.length - index
+            remaining_payments: @payment_schedule.length - index,
+            interest: interest
           ).to_s)
         else
           # Resize only when the sizing rate actually moves. Recomputing every
@@ -225,6 +237,11 @@ class Loan
           payment_date: payment_date,
           interest_rate: BigDecimal(@accrual_rate_for.call(period_start).to_s),
           sizing_rate: BigDecimal(rate_on(payment_date).to_s),
+          # The share of a year a prorated first period covers; absent for a
+          # whole month, so an ordinary row is what it always was. Anything
+          # charged alongside the interest, such as an insurance premium,
+          # covers the same days.
+          **(period_fraction ? { period_fraction: period_fraction } : {}),
           **step
         }
 
@@ -296,6 +313,14 @@ class Loan
         end
 
         fraction
+      end
+
+      def prorated_year_fraction(period_start, period_end)
+        if period_end < period_start
+          raise ArgumentError, "period ends (#{period_end}) before it starts (#{period_start})"
+        end
+
+        BigDecimal((period_end - period_start).to_i.to_s) / DAYS_PER_YEAR
       end
 
       def monthly_rate(annual_percentage)

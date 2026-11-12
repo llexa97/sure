@@ -15,7 +15,10 @@
 class Loan::AmortizationSchedule
   Payment = Data.define(:number, :date, :payment, :principal, :interest, :ending_balance)
 
-  attr_reader :principal, :annual_rate, :term_months, :start_date, :currency
+  MONTHS_PER_YEAR = 12
+
+  attr_reader :principal, :annual_rate, :term_months, :start_date, :currency, :first_payment_date,
+              :interest_only_months
 
   class << self
     # Returns a schedule for the loan, or nil when the loan isn't amortizable
@@ -30,7 +33,10 @@ class Loan::AmortizationSchedule
         start_date: loan.origination_date,
         currency: loan.account.currency,
         rate_resolver: (Loan::RateResolver.for(loan) if loan.variable_rate_type?),
-        day_count_convention: loan.day_count_convention
+        day_count_convention: loan.day_count_convention,
+        first_payment_date: loan.first_payment_date,
+        interest_only_months: loan.interest_only_months,
+        included_insurance_rate: (loan.insurance_rate if loan.insurance_included? && loan.insurance_rate&.positive?)
       )
     end
   end
@@ -38,8 +44,15 @@ class Loan::AmortizationSchedule
   # `rate_resolver` is how a variable loan's recorded rate changes reach the
   # simulator. Omitted, the schedule runs at one rate for its whole life, which
   # is what a fixed loan does.
+  #
+  # `first_payment_date` moves the instalments off the drawdown's day of the
+  # month; `interest_only_months` opens the term with instalments that repay
+  # no principal; `included_insurance_rate` (annual, in percent) makes the
+  # instalment level INCLUDING a premium on the outstanding balance, so each
+  # row's `payment` is that level figure less the period's premium.
   def initialize(principal:, annual_rate:, term_months:, start_date:, currency:, rate_resolver: nil,
-                 day_count_convention: Loan::Simulator::DEFAULT_DAY_COUNT_CONVENTION)
+                 day_count_convention: Loan::Simulator::DEFAULT_DAY_COUNT_CONVENTION,
+                 first_payment_date: nil, interest_only_months: 0, included_insurance_rate: nil)
     @currency = currency
     # Rounded to the currency at the door. A balance carrying more fractional
     # units than the currency has -- `first_valuation_amount` is decimal(19,4)
@@ -53,6 +66,33 @@ class Loan::AmortizationSchedule
     @start_date = start_date
     @rate_resolver = rate_resolver
     @day_count_convention = day_count_convention
+    @first_payment_date = first_payment_date
+    @interest_only_months = interest_only_months.to_i
+    @included_insurance_rate = BigDecimal(included_insurance_rate.to_s) if included_insurance_rate
+  end
+
+  # True when the first period is not one calendar month, so it accrues on
+  # its actual days.
+  def prorated_first_period?
+    first_payment_date.present? && (start_date >> 1) != first_payment_date
+  end
+
+  # The share of a year a payment's period covers when it is prorated, nil
+  # for a whole month. A premium charged alongside the interest covers the
+  # same days.
+  def period_fraction_for(number)
+    simulation.payments.find { |row| row[:payment_number] == number }&.dig(:period_fraction)
+  end
+
+  # What the borrower pays each month once repayment starts, premium included
+  # when the contract bundles it. See #periodic_payment for the part that
+  # repays the loan.
+  def level_instalment
+    row = first_amortising_payment
+    return money(0) if row.nil?
+    return row.payment unless @included_insurance_rate
+
+    row.payment + money(included_premium(row.ending_balance.amount + row.principal.amount))
   end
 
   # True when this schedule re-amortises part-way through, i.e. the repayment
@@ -93,7 +133,10 @@ class Loan::AmortizationSchedule
     # sizes that payment, and re-deriving would quote the rate the loan was
     # written at for a payment the borrower will never make. For a fixed loan
     # the two are the same number.
-    payments.first&.payment || money(0)
+    #
+    # Interest-only instalments are skipped: the repayment is what the loan
+    # asks for once it starts repaying.
+    first_amortising_payment&.payment || money(0)
   end
 
   # What the loan costs in interest over its whole life. Sits slightly above
@@ -132,7 +175,51 @@ class Loan::AmortizationSchedule
     # the calendar-correct answer at month ends: 31 January plus one month is
     # 28 February, not 3 March.
     def payment_schedule
-      @payment_schedule ||= (1..term_months).map { |number| start_date >> number }
+      @payment_schedule ||=
+        if first_payment_date
+          (0...term_months).map { |offset| first_payment_date >> offset }
+        else
+          (1..term_months).map { |number| start_date >> number }
+        end
+    end
+
+    def first_amortising_payment
+      payments[interest_only_months.clamp(0, [ payments.size - 1, 0 ].max)]
+    end
+
+    # Whether the plain level-payment walk is not enough: a deferral or a
+    # bundled premium makes the repayment a per-period figure.
+    def contracted_repayment_varies?
+      interest_only_months.positive? || @included_insurance_rate.present?
+    end
+
+    def included_monthly_insurance_rate
+      @included_monthly_insurance_rate ||=
+        @included_insurance_rate ? @included_insurance_rate / (100 * MONTHS_PER_YEAR) : BigDecimal("0")
+    end
+
+    def included_premium(balance)
+      (balance * included_monthly_insurance_rate).round(currency_precision)
+    end
+
+    # The repayment the contract asks for in one period. Interest only during
+    # the deferral; afterwards the level instalment -- sized once on the
+    # combined interest and premium rate, and again if the rate moves -- less
+    # the period's premium.
+    def contracted_repayment(index:, balance:, sizing_rate:, remaining_payments:, interest:, **)
+      return interest if index < interest_only_months
+
+      if @level_instalment_amount.nil? || @level_instalment_rate != sizing_rate
+        @level_instalment_rate = sizing_rate
+        @level_instalment_amount = Loan::AmortizationMath.level_payment(
+          balance: balance,
+          monthly_rate: sizing_rate + included_monthly_insurance_rate,
+          remaining_payments: remaining_payments,
+          currency_precision: currency_precision
+        )
+      end
+
+      @level_instalment_amount - included_premium(balance)
     end
 
     # The simulator refuses an empty schedule rather than inventing a
@@ -146,7 +233,9 @@ class Loan::AmortizationSchedule
           accrual_rate_for: @rate_resolver ? @rate_resolver.method(:accrual_rate_for) : ->(_date) { annual_rate },
           re_amortisation_events: @rate_resolver&.method(:re_amortisation_events),
           currency_precision: currency_precision,
-          day_count_convention: @day_count_convention
+          day_count_convention: @day_count_convention,
+          prorated_first_period: prorated_first_period?,
+          **(contracted_repayment_varies? ? { payment_strategy: :scheduled, payment_amount: method(:contracted_repayment) } : {})
         ).run
       else
         Loan::SimulationResult.new(payments: [], currency_precision: currency_precision)

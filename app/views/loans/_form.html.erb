@@ -55,6 +55,18 @@
       <p class="text-xs text-secondary"><%= t("loans.form.start_date_hint") %></p>
 
       <div class="flex items-center gap-2">
+        <%# Only needed when the first instalment is not a month after the
+            drawdown; the broken first period then accrues on its days. %>
+        <%= loan_form.date_field :first_payment_date,
+                                 label: t("loans.form.first_payment_date") %>
+        <%= loan_form.number_field :interest_only_months,
+                                 label: t("loans.form.interest_only_months"),
+                                 min: 0,
+                                 step: 1 %>
+      </div>
+      <p class="text-xs text-secondary"><%= t("loans.form.first_payment_date_hint") %></p>
+
+      <div class="flex items-center gap-2">
         <%# Bounded here rather than validated on Loan: PlaidAccount::Liabilities::StudentLoanProcessor
             writes this column from provider dates, and a term the simulator will not walk is
             answered tolerantly there (no schedule, as for an unknown rate type). %>
@@ -90,6 +102,14 @@
                              include_blank: t("loans.form.none") } %>
       </div>
       <p class="text-xs text-secondary"><%= t("loans.form.insurance_rate_hint") %></p>
+
+      <div class="flex items-center justify-between gap-4">
+        <div>
+          <p class="text-sm text-primary"><%= t("loans.form.insurance_included") %></p>
+          <p class="text-xs text-secondary"><%= t("loans.form.insurance_included_hint") %></p>
+        </div>
+        <%= loan_form.toggle :insurance_included %>
+      </div>
 
       <%# Rate changes only mean something for a loan whose rate can move. The
           section is rendered for every rate type, retained rows included, and

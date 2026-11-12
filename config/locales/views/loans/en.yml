@@ -34,6 +34,11 @@ en:
       start_date: Origination date
       start_date_hint: When the loan was drawn down. A new loan's balance history starts on this date, not the opening balance date. Leave blank to use the opening balance date.
       down_payment: Down payment
+      first_payment_date: First payment date
+      first_payment_date_hint: Leave the date blank when the first payment falls one month after origination. Interest-only months open the term with payments that repay no principal and count towards it.
+      interest_only_months: Interest-only months
+      insurance_included: Insurance included in the payment
+      insurance_included_hint: The contracted payment is constant with a decreasing premium inside it.
       insurance_rate: Insurance rate
       insurance_rate_placeholder: '0.36'
       insurance_rate_hint: An annual rate, charged monthly alongside the repayment. Level term is charged on the original balance; decreasing on what is still owed.
