@@ -4,7 +4,6 @@ fr:
     application:
       insights: Analyses
       nav:
-        analysis: Analyse
         assistant: Assistant
         bills: Factures
         budgets: Budgets
