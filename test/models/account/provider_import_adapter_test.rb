@@ -778,6 +778,26 @@ class Account::ProviderImportAdapterTest < ActiveSupport::TestCase
     assert_equal account_provider.id, holding.account_provider_id
   end
 
+  test "a holding claimed through a unique-index collision leaves the account saveable" do
+    investment_account = accounts(:investment)
+    adapter = Account::ProviderImportAdapter.new(investment_account)
+    security = Security.create!(ticker: "CLSH", name: "Collision Fund")
+    account_provider = AccountProvider.create!(account: investment_account, provider: plaid_accounts(:one))
+    date = Date.current
+    calculated = investment_account.holdings.create!(
+      security: security, date: date, currency: "USD", qty: 1, price: 10, amount: 10
+    )
+
+    holding = adapter.import_holding(
+      security: security, quantity: 2, amount: 20, currency: "USD", date: date, price: 10,
+      external_id: "provider_CLSH_#{date}", source: "plaid", account_provider_id: account_provider.id
+    )
+
+    assert_equal calculated.id, holding.id
+    assert_equal "provider_CLSH_#{date}", calculated.reload.external_id
+    assert_nothing_raised { investment_account.update!(balance: investment_account.balance) }
+  end
+
   test "carries a remapped security forward to the next day's holding" do
     account, adapter, account_provider = provider_holding_setup
     reported = Security.create!(ticker: "RPTD", name: "Reported Fund")

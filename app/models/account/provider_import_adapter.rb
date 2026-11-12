@@ -592,6 +592,11 @@ class Account::ProviderImportAdapter
         # that can occur when another provider (or concurrent import) already
         # created a row for this composite key. Use the existing row and keep
         # the outer transaction valid by isolating the error in a savepoint.
+        # The refused row stays in the loaded association otherwise, and the
+        # account's next save would autosave it again, now clashing with the
+        # external_id handed to the existing row below.
+        account.holdings.target.delete(holding) if holding.new_record?
+
         existing = account.holdings.find_by(
           security: security,
           date: date,
